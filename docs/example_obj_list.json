@@ -1,0 +1,15 @@
+{
+    "modality" : "lidar",
+    "inferences" : [
+        {
+            "timestamp" : 0,
+            "class": "sign",
+            "latitude" : 48.65585657896538,
+            "longitude" : -121.94320622830072,
+            "altitude": 400,
+            "dimensions": [
+                0.3, 0.5, 0.7
+            ]
+        }
+    ]
+}
