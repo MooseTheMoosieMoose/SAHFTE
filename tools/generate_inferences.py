@@ -29,7 +29,10 @@ modalities = {
 }
 
 #The max number of objects each modality will "see"
-object_range = [2, 10]
+object_count_range = [2, 10]
+
+#The distance from the vehicles path in which an object can spawn, in meters
+object_distance_range = [2, 25]
 
 #Number of seconds in each frame
 frame_time_length = 0.1
@@ -73,11 +76,9 @@ class Coordinate:
         new_coord.clip()
         return new_coord
     
-def sample_between(a: Coordinate, b: Coordinate) -> Coordinate:
+def sample_between(a: Coordinate, b: Coordinate, t: float = random.uniform(0, 1)) -> Coordinate:
     #Generate a new point in space, longitude has problems with wrapping on the date line
-    t = random.uniform(0, 1)
-
-    sample_lat = a.latitude + (t * (b.longitude - a.latitude))
+    sample_lat = a.latitude + (t * (b.latitude - a.latitude))
 
     #ensure that the longitude goes the right way
     long_diff = b.longitude - a.longitude
@@ -116,10 +117,13 @@ def main() -> None:
         inferences[modality_name] = []
 
     #Simulate all the objects
-    objects_in_sim = random.randint(object_range[0], object_range[1])
+    objects_in_sim = random.randint(object_count_range[0], object_count_range[1])
     for i in range(0, objects_in_sim):
         #Create an object to see which modalities will detect it
-        obj_coord = sample_between(start_pos, end_pos)
+        obj_center = sample_between(start_pos, end_pos, (i + 1 / objects_in_sim))
+        #TODO this assumes a general maximum object height spawn from the vehicles path to be 10 meters
+        #TODO objects should also spawn with clusters, or even multiple detections per object
+        obj_coord = obj_center.jitter(random.uniform(object_distance_range[0], object_distance_range[1]), 10)
 
         obj_dimensions = []
         for _ in range(0, 3):
@@ -127,9 +131,11 @@ def main() -> None:
 
         obj_class = random.choice(classes)
 
+        obj_time = frame_begin_time + (i * 1 / frame_time_length)
+
         #keep a record of all objects seen, the ground truth data
         all_objects.append({
-            "timestamp" : frame_begin_time,
+            "timestamp" : obj_time,
             "class" : obj_class,
             "latitude" : obj_coord.latitude,
             "longitude" : obj_coord.longitude,
