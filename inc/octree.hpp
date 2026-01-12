@@ -21,8 +21,9 @@ private:
 public:
     struct Leaf {
         Internal* parent_octant;
+        Vec3D bounding_dimensions;
         Vec3D actual_point;
-        std::vector<T*> element;
+        T element;
     };
 private:
     struct Internal {
@@ -34,7 +35,7 @@ private:
 
 //Declare the actual class
 public:
-    Octree (const Vec3D& bounding_dimensions, size_t depth_max) : max_depth(depth_max) {
+    Octree(const Vec3D& bounding_dimensions, size_t depth_max) : max_depth(depth_max) {
 
         //Create the root node
         tree_root.depth = 0;
@@ -54,7 +55,10 @@ public:
 
     }
 
-    constexpr bool add_element(T&& item, const Vec3D& pos) noexcept {
+    /**
+     * @brief adds an element to the space
+     */
+    constexpr bool add_element(T&& item, const Vec3D& pos, const Vec3D& dim) noexcept {
         //See if element exists in master space
         if (!point_in_space(pos, tree_root)) {
             return false;
@@ -68,6 +72,10 @@ public:
         }
 
         return true;
+    }
+
+    constexpr std::vector<T> extract_and_reset() {
+
     }
 
 private:
@@ -86,8 +94,11 @@ private:
     //up to max depth to save on memory and calculations
     std::vector<Vec3D> sub_dimensions;
 
+    /**
+     * @brief somewhat efficiently determines if a point lies within a space, used for intersection and detection culling
+     */
     constexpr bool point_in_space(const Vec3D& point, const Internal& space) noexcept {
-        const double x_offset = sub_dimensions[space.depth].x 2;
+        const double x_offset = sub_dimensions[space.depth].x / 2;
         if (std::abs(point.x - space.center_point.x) >= x_offset) {
             return false;
         }
@@ -104,6 +115,25 @@ private:
 
         return true;
     }
+
+    /**
+     * @brief given some space and a given point, determins which octant within that space it should lie in
+     * @note octant selection is determined purely based on the center point of the space, no bounds checking occurs
+     * @note refer in the docs for the reference unit cube to work out the bit twiddling that makes this work
+     */
+    constexpr size_t get_space_octant(const Vec3D& point, const Internal& space) noexcept {
+        //See if it is left or right (x direction)
+        size_t is_to_right = (point.x >= space.center_point.x) ? 0 : 1;
+
+        //Given some point, determine if it is behind or in front of the point (y direction)
+        size_t is_in_front = (point.y >= space.center_point.y) ? 0 : 1;
+
+        //See if it is up or down (z direction)
+        size_t is_up = (point.z >= space.center_point.z) ? 0 : 1;
+
+        return static_cast<size_t>((is_to_right) | (is_in_front << 1) | (is_up << 2))
+    }
+    
 };
 
 } //End namespace FusionSystem
