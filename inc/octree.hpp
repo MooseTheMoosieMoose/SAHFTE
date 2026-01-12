@@ -38,12 +38,6 @@ private:
 public:
     Octree(const Vec3D& bounding_dimensions, size_t depth_max) : max_depth(depth_max) {
 
-        //Create the root node
-        tree_root.depth = 0;
-        tree_root.parent_octant = nullptr;
-        tree_root.center_point = Vec3D{0, 0, 0};
-        tree_root.children = {nullptr};
-
         //Pre-calculate the bounding dimensions for this space
         sub_dimensions.push_back(bounding_dimensions);
         for (int i = 1; i < max_depth + 1; i++) {
