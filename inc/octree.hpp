@@ -118,20 +118,18 @@ private:
 
     /**
      * @brief given some space and a given point, determins which octant within that space it should lie in
+     * by dividing space evenly along all 3 axis, i.e is it left or right? (first bit), is it forwards or back? (second bit)
+     * is it up or down? 3rd bit, to create a code mapping. This corresponds to a 3d Z-Order curve or a Morton Code
      * @note octant selection is determined purely based on the center point of the space, no bounds checking occurs
      * @note refer in the docs for the reference unit cube to work out the bit twiddling that makes this work
+     * @note https://en.wikipedia.org/wiki/Z-order_curve for coding convention orders
      */
-    constexpr size_t get_space_octant(const Vec3D& point, const Internal& space) noexcept {
-        //See if it is left or right (x direction)
-        size_t is_to_right = (point.x >= space.center_point.x) ? 0 : 1;
-
-        //Given some point, determine if it is behind or in front of the point (y direction)
-        size_t is_in_front = (point.y >= space.center_point.y) ? 0 : 1;
-
-        //See if it is up or down (z direction)
-        size_t is_up = (point.z >= space.center_point.z) ? 0 : 1;
-
-        return static_cast<size_t>((is_to_right) | (is_in_front << 1) | (is_up << 2))
+    constexpr uint8_t get_space_octant(const Vec3D& point, const Internal& space) noexcept {
+        return static_cast<uint8_t>(
+            (point.x >= space.center_point.x) | 
+            ((point.y >= space.center_point.y) << 1) | 
+            ((point.z >= space.center_point.z) << 2)
+        );
     }
     
 };
