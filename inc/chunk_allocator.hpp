@@ -19,7 +19,7 @@ public:
      * @param items_per_page is the number of continuous elements you want in each page before another
      * allocation is needed. Each page will be `sizeof(T) * items_per_page`
      */
-    ChunkAllocator (size_t items_per_page) : items_in_page(items_per_page) {
+    ChunkAllocator (size_t items_per_page = 128) : items_in_page(items_per_page) {
         pages.push_back(std::make_unique<T[]>(items_in_page));
     }
 
