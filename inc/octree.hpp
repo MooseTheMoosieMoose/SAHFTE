@@ -18,15 +18,34 @@ namespace FusionSystem {
 template <typename T>
 class Octree {
 private:
+    //Forward declare the internal node type
     struct Internal;
 public:
+    /**
+     * @brief item is a single node in a linked list system used to store the
+     * actual elements in the octree, allowing easy memory reuse, and flexability
+     * in the number of items in each fine spatial grid
+     */
+    struct Item {
+        T item {};
+        Vec3D item_pos {};
+        Vec3D bounding_dimensions {};
+        Item* next = nullptr;
+    };
+
+    /**
+     * @brief leafs hold a linked list of items that they store, and are terminal on the tree
+     */
     struct Leaf {
         Internal* parent_octant = nullptr;
-        Vec3D bounding_dimensions {};
-        Vec3D actual_point {};
-        T element {};
+        Item* item_list = nullptr;
     };
+
 private:
+    /**
+     * @brief internal nodes are nodes baked into the tree structure that are generated based
+     * on the depth of the octree
+     */
     struct Internal {
         Internal* parent_octant = nullptr;
         size_t depth = 0;
@@ -41,11 +60,7 @@ public:
         //Pre-calculate the bounding dimensions for this space
         sub_dimensions.push_back(bounding_dimensions);
         for (int i = 1; i < max_depth + 1; i++) {
-            sub_dimensions.push_back(Vec3D{
-                .x = sub_dimensions[i - 1].x / 2,
-                .y = sub_dimensions[i - 1].y / 2,
-                .z = sub_dimensions[i - 1].z / 2
-            });
+            sub_dimensions.push_back(sub_dimensions[i - 1] / 2);
         }
         
 
@@ -54,7 +69,7 @@ public:
     /**
      * @brief adds an element to the space
      */
-    constexpr bool add_element(T&& item, const Vec3D& pos, const Vec3D& dim) noexcept {
+    constexpr bool add_element(const T& item, const Vec3D& pos, const Vec3D& dim) noexcept {
         //See if element exists in master space
         if (!point_in_space(pos, tree_root)) {
             return false;
@@ -62,24 +77,42 @@ public:
 
         //Walk down the tree and insert the element
         Internal* head = &tree_root;
-        size_t depth_counter = 0;
-        while (depth_counter > max_depth) {
+
+        //Seek out the insertion point
+        while (head->depth > max_depth - 1) {
             //Get the points relative octant
             uint8_t octant = get_space_octant(pos, head);
             
-            //Check to see if the next node is initilized yet
+            //Check to see if the next node is initilized yet, if not, create a new object
             if (head->children[octant] == nullptr) {
                 Internal* new_internal = internal_nodes.allocate();
-                //Get new center point of octant
-                
+                new_internal->center_point = get_octant_center(head, octant);
+                new_internal->parent_octant = head;
+                new_internal->depth = head->depth + 1;
+                head->children[octant] = new_internal;
             }
+
+            //Walk to a finer level of detail
+            head = head->children[octant];
         }
+
+        //Head is now set to the parent of the next leaf node, check to see if the next
+        //Node exists or not
+        uint8_t storage_octant = get_space_octant(pos, head);
+        if (head->children[storage_octant] == nullptr) {
+            Leaf* new_leaf = leaf_nodes.allocate();
+            new_leaf->parent_octant = head;
+        }
+        
+
+        //Assign leaf
+        head->children[storage_octant] = new_leaf;
 
         return true;
     }
 
     constexpr std::vector<T> extract_and_reset() {
-
+        //TODO
     }
 
 private:
@@ -93,6 +126,9 @@ private:
     //over built-in unique_ptrs to allow for memory reuse across iterations
     ChunkAllocator<Internal> internal_nodes;
     ChunkAllocator<Leaf> leaf_nodes;
+
+    //To also preserve memory used throughout the program, items are kept in a linear allocator too
+    ChunkAllocator<Item> item_nodes;
 
     //The pre-calculated sizes of all the sub divisions of the bounding space
     //up to max depth to save on memory and calculations
@@ -136,7 +172,7 @@ private:
         );
     }
 
-    constexpr Vec3D get_octant_center (const Vec3D& point, const Internal& space, uint8_t octant) noexcept {
+    constexpr Vec3D get_octant_center (const Internal& space, uint8_t octant) noexcept {
         //Based on the octant bitflags create a multiplier by either 1 or -1 to go left or right of current center
         double x_toggle = (octant & 1) ? 1 : -1;
         double y_toggle = ((octant >> 1) & 1) ? 1 : -1;
@@ -144,12 +180,12 @@ private:
 
         //The offset is the dimensions of the next depth cube, toggled along the dividing axis
         Vec3D offset = Vec3D{
-            .x = (sub_dimensions[head->depth + 1].x) * x_toggle,
-            .y = (sub_dimensions[head->depth + 1].y) * y_toggle,
-            .z = (sub_dimensions[head->depth + 1].z) * z_toggle
+            .x = (sub_dimensions[head->depth].x / 4) * x_toggle,
+            .y = (sub_dimensions[head->depth].y / 4) * y_toggle,
+            .z = (sub_dimensions[head->depth].z / 4) * z_toggle
         };
 
-        return point + offset;
+        return space.center_point + offset;
     }
     
 };

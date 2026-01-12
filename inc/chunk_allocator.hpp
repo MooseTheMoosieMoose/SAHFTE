@@ -2,6 +2,9 @@
 #include <memory>
 #include <vector>
 #include <cstddef>
+#include <algorithm>
+#include <execution>
+#include <array>
 #include <concepts>
 
 /**
@@ -72,11 +75,20 @@ public:
 
     /**
      * @brief resets the current write point for new allocs, marking all allocated objects
-     * as overwritable
+     * as overwritable, applys a soft destructor over all elements by filling them with default
+     * initilization of T
      */
     constexpr void reset() {
         current_page = 0;
         item_index = 0;
+        std::for_each(
+            std::execution::par,
+            pages.begin(),
+            pages.end(),
+            [](std::unique_ptr<T[]> page_ptr) {
+                std::fill(page_ptr.get(), page_ptr.get() + items_in_page, T{});
+            }
+        );
     }
 
 private:
