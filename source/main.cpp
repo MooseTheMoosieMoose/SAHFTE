@@ -1,16 +1,60 @@
 #include <string>
 #include <iostream>
 #include <vector>
+#include <fstream>
+
+#include <json.hpp>
 
 #include "octree.hpp"
+#include "coord_conv.hpp"
+
+using json = nlohmann::json;
+using namespace FusionSystem;
 
 struct dummy_obj {
     float foo;
 };
 
-int main() {
-    auto bounding_dim = FusionSystem::Vec3D{1024, 1024, 1024};
-    size_t max_depth = 4;
-    FusionSystem::Octree<dummy_obj> test_octree(bounding_dim, max_depth);
+int main(int argc, char* argv[]) {
+    const std::string gt_fp = "./test_data/all_objects_ground_truth.json";
+    const std::string camera_fp = "./test_data/camera_sim_results.json";
+
+    std::ifstream gt_file(gt_fp);
+    if (!gt_file.is_open()) {
+        std::cout << "Failed to open ground truth file at: " << gt_fp << std::endl;
+        return 1;
+    }
+
+    json gt_data = json::parse(gt_file);
+    Vec3D origin = Vec3D {
+        .x = gt_data["start_pos"][0],
+        .y = gt_data["start_pos"][1],
+        .z = gt_data["start_pos"][2]
+    };
+
+    std::cout << "Ground truth data puts origin at: " << origin.to_string() << std::endl;
+
+    std::ifstream camera_file(camera_fp);
+    if (!camera_file.is_open()) {
+        std::cout << "Failed to open camera file!" << std::endl;
+        return 1;
+    }
+
+    json data = json::parse(camera_file); 
+    std::cout << "Camera data read!" << std::endl;
+    for (const auto& det : data["inferences"]) {
+        Vec3D new_pos = Vec3D {
+            .x = det["latitude"],
+            .y = det["longitude"],
+            .z = det["altitude"]
+        };
+        
+        std::cout << "Inference centered around: " << new_pos.to_string() << std::endl;
+        
+        Vec3D local_pos = geo_to_local(origin, new_pos);
+        std::cout << "Local position is at: " << local_pos.to_string() << "\n" << std::endl;
+
+    }
+
     return 0;
 }

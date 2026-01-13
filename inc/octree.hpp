@@ -1,4 +1,6 @@
 
+#pragma once
+
 #include <variant>
 #include <array>
 #include <cstdint>
@@ -20,7 +22,7 @@ class Octree {
 private:
     //Forward declare the internal node type
     struct Internal;
-public:
+
     /**
      * @brief item is a single node in a linked list system used to store the
      * actual elements in the octree, allowing easy memory reuse, and flexability
@@ -41,7 +43,6 @@ public:
         Item* item_list = nullptr;
     };
 
-private:
     /**
      * @brief internal nodes are nodes baked into the tree structure that are generated based
      * on the depth of the octree
@@ -63,13 +64,12 @@ public:
             sub_dimensions.push_back(sub_dimensions[i - 1] / 2);
         }
         
-
     }
 
     /**
      * @brief adds an element to the space
      */
-    constexpr bool add_element(const T& item, const Vec3D& pos, const Vec3D& dim) noexcept {
+    constexpr bool add_element(const T& obj, const Vec3D& pos, const Vec3D& dim) noexcept {
         //See if element exists in master space
         if (!point_in_space(pos, tree_root)) {
             return false;
@@ -84,7 +84,7 @@ public:
             uint8_t octant = get_space_octant(pos, head);
             
             //Check to see if the next node is initilized yet, if not, create a new object
-            if (head->children[octant] == nullptr) {
+            if (std::get<Internal*>(head->children[octant]) == nullptr) {
                 Internal* new_internal = internal_nodes.allocate();
                 new_internal->center_point = get_octant_center(head, octant);
                 new_internal->parent_octant = head;
@@ -93,26 +93,53 @@ public:
             }
 
             //Walk to a finer level of detail
-            head = head->children[octant];
+            head = std::get<Internal*>(head->children[octant]);
         }
 
         //Head is now set to the parent of the next leaf node, check to see if the next
         //Node exists or not
         uint8_t storage_octant = get_space_octant(pos, head);
-        if (head->children[storage_octant] == nullptr) {
+        if (std::get<Leaf*>(head->children[storage_octant]) == nullptr) {
             Leaf* new_leaf = leaf_nodes.allocate();
             new_leaf->parent_octant = head;
+            head->children[storage_octant] = new_leaf;
         }
-        
 
-        //Assign leaf
-        head->children[storage_octant] = new_leaf;
+        //Assign Element to leaf
+        Leaf* storage_leaf = std::get<Leaf*>(head->children[storage_octant]);
+
+        Item* new_item = item_nodes.allocate();
+        new_item->item = obj;
+        new_item->bounding_dimensions = dim;
+        new_item->item_pos = pos;
+        new_item->next = storage_leaf->item_list;
+        storage_leaf->item_list = new_item;
 
         return true;
     }
 
-    constexpr std::vector<T> extract_and_reset() {
-        //TODO
+    /**
+     * @brief Reset "unsets" all the item linked lists, and keeps any existing tree structure
+     * in place, along with retaining memory allocations, meaning each succsessive use of the tree
+     * uses the same memory and the same nodes.
+     */
+    constexpr void reset() noexcept {
+        item_nodes.map([](Item& item){
+            item.next = nullptr;
+        });
+
+        leaf_nodes.map([](Leaf& leaf){
+            leaf.item_list = nullptr;
+        });
+
+        item_nodes.reset();
+    }
+
+    /**
+     * @brief gets the number of leaf nodes currently in use
+     */
+    constexpr void used_cell_count() noexcept {
+        return leaf_nodes.count();
     }
 
 private:
@@ -180,9 +207,9 @@ private:
 
         //The offset is the dimensions of the next depth cube, toggled along the dividing axis
         Vec3D offset = Vec3D{
-            .x = (sub_dimensions[head->depth].x / 4) * x_toggle,
-            .y = (sub_dimensions[head->depth].y / 4) * y_toggle,
-            .z = (sub_dimensions[head->depth].z / 4) * z_toggle
+            .x = (sub_dimensions[space->depth].x / 4) * x_toggle,
+            .y = (sub_dimensions[space->depth].y / 4) * y_toggle,
+            .z = (sub_dimensions[space->depth].z / 4) * z_toggle
         };
 
         return space.center_point + offset;

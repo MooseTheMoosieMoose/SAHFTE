@@ -1,3 +1,4 @@
+#pragma once
 
 #include <memory>
 #include <vector>
@@ -25,7 +26,7 @@ public:
      * @param items_per_page is the number of continuous elements you want in each page before another
      * allocation is needed. Each page will be `sizeof(T) * items_per_page`
      */
-    ChunkAllocator (size_t items_per_page = 128) : items_in_page(items_per_page) {
+    ChunkAllocator (size_t items_per_page = 128) : items_in_page(items_per_page), current_page(0), item_index(0) {
         pages.push_back(std::make_unique<T[]>(items_in_page));
     }
 
@@ -75,20 +76,50 @@ public:
 
     /**
      * @brief resets the current write point for new allocs, marking all allocated objects
-     * as overwritable, applys a soft destructor over all elements by filling them with default
-     * initilization of T
+     * as overwritable
      */
     constexpr void reset() {
         current_page = 0;
         item_index = 0;
+    }
+
+    /**
+     * @brief applys a lambda to all elements currently in use, can be used to apply
+     * "soft" destructors to objects, or bulk modifications
+     * @note vectorized (I hope) with std::for_each execution::par policy
+     */
+    constexpr void map(void(*lambda)(T&)) noexcept {
+        //Cover all fully used pages
         std::for_each(
             std::execution::par,
             pages.begin(),
-            pages.end(),
-            [](std::unique_ptr<T[]> page_ptr) {
-                std::fill(page_ptr.get(), page_ptr.get() + items_in_page, T{});
+            pages.begin() + current_page,
+            [this, lambda](const std::unique_ptr<T[]> page_ptr) {
+                for (size_t i = 0; i < items_in_page; ++i) {
+                    lambda(page_ptr[i]);
+                }
             }
         );
+
+        //Cover the most recent partial page
+        auto& last_page = pages[current_page];
+        for (size_t i = 0; i < item_index; ++i) {
+            lambda(last_page[i]);
+        }
+    }
+
+    /**
+     * @brief gets the number of items currently in use
+     */
+    constexpr size_t count() noexcept {
+        return (current_page * items_in_page) + item_index + 1;
+    }
+
+    /**
+     * @brief gets the maximum number of items that can be stored in total reserved memory
+     */
+    constexpr size_t max() noexcept {
+        return (current_page + 1) * items_in_page;
     }
 
 private:

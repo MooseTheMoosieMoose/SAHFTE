@@ -1,5 +1,8 @@
 #pragma once
 
+#include <string>
+#include <format>
+
 namespace FusionSystem {
 
 /**
@@ -33,12 +36,16 @@ struct Vec3D {
         };
     }
 
-    constexpr Vec3D operator*(double scalar) noexcept {
+    constexpr Vec3D operator/(double scalar) noexcept {
         return Vec3D{
             .x = x / scalar,
             .y = y / scalar,
             .z = z / scalar,
         };
+    }
+
+    inline std::string to_string() {
+        return std::format("({}, {}, {})", x, y, z);
     }
 };
 
