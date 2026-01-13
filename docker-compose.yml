@@ -1,0 +1,15 @@
+services:
+  app:
+    build: 
+      context: .
+      dockerfile: Containerfile
+
+    userns_mode: ${PODMAN_USERNS:-host}
+    
+    security_opt:
+      - "label=disable"
+
+    volumes:
+      - ../:/workspace:cached,Z
+      
+    command: sleep infinity

@@ -1,3 +1,4 @@
 test_data/*
 build/*
-/.DS_STORE
+.DS_STORE
+.env
