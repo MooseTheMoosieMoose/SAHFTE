@@ -27,22 +27,33 @@ Threadpool::~Threadpool() {
     }
 }
 
-void Threadpool::attach_to_process_context() {
-    std::unique_lock<std::mutex> lock(queue_mtx, std::defer_lock);
-    while (true) {
+void Threadpool::join_and_process() {
+    //Enter into the process queue and help clean out any jobs not dispatched
+    {
+        std::unique_lock<std::mutex> lock(queue_mtx, std::defer_lock);
+        while (true) {
 
-        lock.lock();
-        if (task_queue.empty()) {
+            lock.lock();
+            if (task_queue.empty()) {
+                lock.unlock();
+                return;
+            }
+
+            auto runnable = task_queue.front();
+            task_queue.pop();
             lock.unlock();
-            return;
+
+            runnable();
+            queued_jobs_count--;
         }
+    }
 
-        auto runnable = task_queue.front();
-        task_queue.pop();
-        queued_jobs_count--;
-        lock.unlock();
-
-        runnable();
+    //Wait for the number of running tasks to go to zero
+    {
+        std::unique_lock<std::mutex> lock(wait_mtx);
+        wait_cv.wait(lock, [this]{
+            return queued_jobs_count.load() == 0;
+        });
     }
 }
 
@@ -69,11 +80,16 @@ void Threadpool::process_tasks() {
         //Once a job is ready to go, pop it off
         auto runnable = std::move(task_queue.front());
         task_queue.pop();
-        queued_jobs_count--;
         lock.unlock();
 
         //Then execute the job
         runnable();
+
+        std::size_t remaining = queued_jobs_count.fetch_sub(1);
+        if (remaining == 0) {
+            wait_cv.notify_all();
+        }
+
         lock.lock();
     }
     

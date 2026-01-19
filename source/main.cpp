@@ -3,6 +3,7 @@
 #include <vector>
 #include <fstream>
 #include <syncstream>
+#include <cmath>
 
 #include "threadpool.hpp"
 
@@ -64,17 +65,31 @@ using namespace FusionSystem;
 
 int main() {
     std::cout << "Threadpool test" << std::endl;
-    
-    Threadpool tp(4);
-    for (int i = 0; i < 100; i++) {
-        tp.queue_task([=]() {
-            //Waste cycles
-            std::this_thread::sleep_for(std::chrono::hours(400));
-            std::osyncstream(std::cout) << "This is task #" << i << std::endl;
-        });
+
+    std::vector<int> items {};
+    for (int i = 0; i < 1000; i++) {
+        items.push_back(i);
     }
 
-    tp.attach_to_process_context();
+    Threadpool tp(4);
+
+    tp.queue_and_map_task(items, 2, [](int val){
+        const int max_check = static_cast<int>(std::sqrt(val));
+        bool is_prime = true;
+        for (int i = 2; i < max_check; i++) {
+            if (val % i == 0) {
+                is_prime = false;
+                break;
+            }
+        }
+
+        if (is_prime) {
+            std::osyncstream(std::cout) << "Value: " << val  << " is prime!" << std::endl;
+        } else {
+            std::osyncstream(std::cout) << "Value: " << val  << " is not prime..." << std::endl;
+        }
+        
+    });
 
     return 0;
 }
