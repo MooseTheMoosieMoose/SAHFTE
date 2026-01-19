@@ -10,6 +10,6 @@ services:
       - "label=disable"
 
     volumes:
-      - ../:/workspace:cached,Z
+      - ./:/workspace:cached,Z
       
     command: sleep infinity

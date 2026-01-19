@@ -14,7 +14,8 @@ RUN apt-get update && apt-get install -y \
     python3-pip \
     g++ \
     cmake \
-    ninja-build
+    ninja-build \
+    git
 
 #Using Pip get Pandas, Numpy, plotly and Jupyter
 RUN pip install jupyter pandas numpy plotly

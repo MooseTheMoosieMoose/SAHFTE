@@ -38,5 +38,5 @@ VsCode will look for Docker by default and not Podman.
 This is VSCode trying to look for WSL GUI support which Podman doesnt need or support for our purposes, turn it off
 
 1. go to settings `Cntrl` + `,`
-2. look for `Dev > Containers: GPU Availability`, set it to `none`
+2. look for `Dev > Containers: Wayland Socket`, set it to `none`
 3. save and reboot VS code

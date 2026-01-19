@@ -3,7 +3,7 @@
   "dockerComposeFile": "../docker-compose.yml",
   "service": "app",
   "workspaceFolder": "/workspace",
-
+  "postCreateCommand": "git config --global --add safe.directory ${containerWorkspaceFolder}",
   "features": {},
   
   "customizations": {
