@@ -3,16 +3,7 @@
 
 namespace FusionSystem {
 
-Threadpool::Threadpool (std::size_t thread_count) {
-    max_threads = (std::thread::hardware_concurrency() < thread_count) ? std::thread::hardware_concurrency() : thread_count;
-    queued_jobs_count.store(0);
-    exit_flag.store(false);
-
-    //Create the threads, attaching them to the process tasks job
-    for (std::size_t i = 0; i < max_threads; i++) {
-        threads.push_back(std::thread([this](){ process_tasks(); }));
-    }
-}
+Threadpool::Threadpool() : queued_jobs_count(0), exit_flag(false) {}
 
 Threadpool::~Threadpool() {
     //Signal to threads that work is done
@@ -24,6 +15,15 @@ Threadpool::~Threadpool() {
         if (t.joinable()) {
             t.join();
         }
+    }
+}
+
+void Threadpool::initilize_threads(std::size_t thread_count) {
+    max_threads = (std::thread::hardware_concurrency() < thread_count) ? std::thread::hardware_concurrency() : thread_count;
+
+    //Create the threads, attaching them to the process tasks job
+    for (std::size_t i = 0; i < max_threads; i++) {
+        threads.push_back(std::thread([this](){ process_tasks(); }));
     }
 }
 

@@ -23,7 +23,7 @@ public:
     /**
      * @brief normal constructor for a threadpool
      */
-    Threadpool (std::size_t thread_count);
+    Threadpool ();
 
     /**
      * @brief the base destructor handles signaling to child threads that the process should end
@@ -34,6 +34,11 @@ public:
     Threadpool& operator=(const Threadpool& other) = delete; //We do not want copy assignment either
     Threadpool (Threadpool&& other) = delete; //Moving is also naughty
     Threadpool& operator=(Threadpool&& other) = delete; //Move assignment is still bad
+
+    /**
+     * @brief spins up the threads that the pool will use, this should only be called once!
+     */
+    void initilize_threads(std::size_t thread_count);
 
     /**
      * @brief a template type-eraser that allows you to place any  `void` returning callable into queue 
