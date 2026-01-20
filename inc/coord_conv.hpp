@@ -98,4 +98,8 @@ constexpr std::optional<uint64_t> geo_to_z_order(
     return std::optional(z_val);
 }
 
+constexpr double distance_between(const Vec3D& a, const Vec3D& b) {
+    return std::sqrt(std::pow((b.x - a.x), 2) + std::pow((b.y - a.y), 2) + std::pow((b.y - a.y), 2));
+}
+
 }; //End namespace fusion system

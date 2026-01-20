@@ -5,6 +5,7 @@
 #include <fstream>
 #include <syncstream>
 #include <cmath>
+#include <chrono> //Time Profiling
 
 //External Library Includes
 #include <json.hpp>
@@ -77,10 +78,16 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    //Time
+    auto start = std::chrono::high_resolution_clock::now();
+
     fuser.order_inferences();
 
-    fuser.debug_z_buff();
+    fuser.merge_intersections();
 
+    auto end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double, std::milli> duration = end - start;
+    std::cout << "Program executed in: " << duration.count() << " ms" << std::endl;
 
     return 0;
 }

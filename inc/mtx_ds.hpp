@@ -52,6 +52,10 @@ public:
         return storage.size();
     }
 
+    const std::queue<T>& storage_ref() {
+        return storage;
+    }
+
 
 private:
     std::queue<T> storage {};
@@ -81,6 +85,10 @@ public:
     std::size_t size() {
         std::lock_guard<std::mutex> lock(mtx);
         return storage.size();
+    }
+
+    const std::vector<T>& storage_ref() {
+        return storage;
     }
 
 
