@@ -2,7 +2,6 @@
 
 #include <mutex>
 #include <vector>
-#include <atomic>
 #include <queue>
 #include <optional>
 #include <set>
@@ -115,6 +114,13 @@ public:
         return storage.count();
     }
 
+    /**
+     * @brief gets a reference to the internal storage element
+     * @warning NOT THREAD SAFE!
+     */
+    const std::multiset<T>& storage_ref() {
+        return storage;
+    }
 
 private:
     std::multiset<T> storage {};

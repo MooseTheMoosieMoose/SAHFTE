@@ -125,6 +125,10 @@ public:
      */
     std::size_t get_queued_count() const noexcept;
 
+    std::size_t get_max_threads() const noexcept {
+        return max_threads;
+    }
+
 
 private:
     std::size_t max_threads;
