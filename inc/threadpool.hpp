@@ -63,15 +63,16 @@ public:
 
     /**
      * @brief given some container that supports `begin()`, `end()`, map some task across the elements inside `container`,
-     * split as `jobs` tasks 
+     * split as `jobs` tasks. Will call `callable` with (T item, std::size_t indx) as the first two arguments
      * @note necessarily blocking to prevent pointer invalidation
+     * @note this specialization is for random access iterators, but should work for bi-directional too
+     * @todo Make a specialization for map
      */
-    template <typename T, template <typename, typename...> class Container, typename Func, typename... Args>
-    requires requires (Container<T> container ){ { container.end() - container.begin() } -> std::convertible_to<std::ptrdiff_t>; }
-    void queue_and_map_task(Container<T>& container, std::size_t jobs, Func&& callable, Args&&... args) {
+    template <typename Container, typename Func, typename... Args>
+    requires requires (Container container ){ { container.size() } -> std::convertible_to<std::size_t>; }
+    void queue_and_map_task(Container& container, std::size_t jobs, Func&& callable, Args&&... args) {
         //Get the number of elements in the container
-        const std::size_t element_count = static_cast<std::size_t>(container.end() - container.begin());
-
+        const std::size_t element_count = container.size();
         //If there are more jobs than elements, then we would be wasting jobs, clip it down for a 1-1 matching
         if (jobs > element_count) {
             jobs = element_count;
@@ -83,10 +84,13 @@ public:
         //Create each job
         auto lambda_iter_begin = container.begin();
 
+        //Keep track of the index within each task so that it can be passed to the function
+        std::size_t indx = 0;
+
         for (std::size_t i = 0; i < jobs; i++) {
             //Increment the job counter and calculate the end point of this job
             queued_jobs_count++;
-            auto lambda_iter_end = lambda_iter_begin + elem_per_job;
+            auto lambda_iter_end = std::advance(lambda_iter_begin, elem_per_job);
             if (i == jobs - 1 || lambda_iter_end > container.end()) {
                 lambda_iter_end = container.end();
             }
@@ -94,17 +98,23 @@ public:
             //Enforce a seperate scope for the lock on the task queue
             {
                 std::lock_guard<std::mutex> lock(queue_mtx);
-                task_queue.push([&, begin = lambda_iter_begin, end = lambda_iter_end]() mutable {
+                task_queue.push([&, begin = lambda_iter_begin, end = lambda_iter_end, i = indx]() mutable {
                     auto self_iter = begin;
                     while (self_iter != end) {
-                        std::invoke(callable, *self_iter, args...);
-                        self_iter++;
+                        std::invoke(callable, *self_iter, i, args...);
+                        std::advance(self_iter, 1);
+                        i++;
                     }
                 });
             }
 
+            //Flag our CV that a new task is ready to rumble
+            queue_cv.notify_one();
+
             //Advance the iterator
+            indx += static_cast<std::size_t>(lambda_iter_end - lambda_iter_begin);
             lambda_iter_begin = lambda_iter_end;
+            
         }
 
         //We must wait to prevent pointer invalidation

@@ -4,7 +4,8 @@
 #include <string>
 #include <tuple>
 #include <cstdint>
-#include <iostream>
+    #include <iostream>
+    #include <syncstream>
 #include <cmath>
 #include <shared_mutex>
 #include <atomic>
@@ -34,7 +35,7 @@ private:
         uint64_t z_order;
         Inference* indx;
 
-        //The less than operator is required for multiset
+        //The less than operator is required for sorting
         bool operator<(const ZOrderedPtr& other) const {
             return z_order < other.z_order;
         }
@@ -115,10 +116,9 @@ public:
         pool.queue_and_map_task(
             inferences,
             pool.get_max_threads() + 1,
-            [this](Inference& inf) {
+            [this](Inference& inf, std::size_t indx) {
                 auto conv_coord = geo_to_z_order(inf.center, ref_origin, bounding_volume, bit_depth);
                 if (conv_coord.has_value()) {
-                    std::size_t indx = &inf - &inferences[0];
                     z_buff[indx] = ZOrderedPtr{
                         conv_coord.value(),
                         &inf
@@ -133,7 +133,7 @@ public:
 
     void merge_intersections() {
         //Get the total number of infrences in the system
-        std::size_t total_count = inferences.size();
+        std::size_t total_count = z_buff.size();
         
         //If there are no infrences in existence, dont do anything
         if (total_count == 0) {
@@ -148,30 +148,38 @@ public:
         pool.queue_and_map_task(
             z_buff,
             pool.get_max_threads() + 1,
-            [&](ZOrderedPtr& z_ptr) {
-                
+            [&](ZOrderedPtr& z_ptr, std::size_t z_indx) {
                 //Get the inference we are comparing against
                 const auto& subject = z_ptr.indx;
 
+                //Due tointersections working correctly with the dimensions we have to work in local space
+                const auto subject_center = geo_to_local(ref_origin, subject->center);
+
                 //Pick a conceivably close distance where we can stop looking for neighbors
-                const double max_range = 2 * std::max({subject->dim.x, subject->dim.x, subject->dim.y});
+                const double max_range = 2 * std::max({subject->dim.x, subject->dim.y, subject->dim.z});
 
                 //Pick a number of misses before we abandon the search
+                //TODO this can be something we can set elsewhere
                 const std::size_t max_misses = 25;
                 std::size_t missed_count = 0;
 
                 //Loop over the other infrences and perform intersection checks
-                std::size_t z_indx = &z_ptr - &z_buff[0];
-                for (int z_iter = z_indx + 1; z_iter < total_count; z_iter++) {
+                for (std::size_t z_iter = z_indx + 1; z_iter < total_count; z_iter++) {
                     //Get the item we are checking
                     const auto& check = z_buff[z_iter].indx;
 
+                    //Again, make sure we are working in local space
+                    const auto check_center = geo_to_local(ref_origin, check->center);
+
                     //Check to see if we have reached an object that is outside spatial bounds
-                    if (distance_between(subject->center, check->center) > max_range) {
+                    if (distance_between(subject_center, check_center) > max_range) {
                         missed_count++;
                         if (missed_count > max_misses) {
                             break;
                         }
+                        continue;
+                    } else {
+                        missed_count = 0;
                     }
                     
                     //Otherwise we can check to see if they are intersecting, if they are we mark it as mergable
@@ -200,26 +208,21 @@ public:
         }
 
         //Step 4
-        //log print all the clusters
-        for (const auto& pair : clusters) {
-            std::cout << "Cluster Size: " << pair.second.size() << std::endl;
-            
-            for (const auto& z_index : pair.second) {
-                auto* inf_ptr = z_buff[z_index].indx;
-                std::cout << "Pos: " << geo_to_local(ref_origin, inf_ptr->center).to_string();
-                std::cout << " Dim: " << inf_ptr->dim.to_string();
-                auto& class_map = inf_ptr->classification;
-                for (const auto& class_pair : class_map) {
-                    std::cout << " Class: " << class_pair.first << std::endl;
-                }
+        //For each cluster, create the fusion
+        std::shared_mutex clusters_mtx {};
+        pool.queue_and_map_task(
+            clusters,
+            pool.get_max_threads() + 1,
+            [&](std::pair<std::size_t, std::vector<std::size_t>>& cluster, std::size_t _) {
+                
             }
-            std::cout << "\n" << std::endl;
-        }
+        );
     }
 
     /**
      * @brief an implementation of bounding box collision under the seperating axis theorem
      * @note https://en.wikipedia.org/wiki/Hyperplane_separation_theorem
+     * @todo need to add a grace boundary for small objects that may not get joined as expected
      */
     bool is_intersecting(const Inference* a, const Inference* b) {
         if (std::abs(a->center.x - b->center.x) * 2 > (a->dim.x + b->dim.x)) {

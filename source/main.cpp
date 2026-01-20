@@ -78,12 +78,18 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    std::cout << "Loaded succsessfully!" << std::endl;
+
     //Time
     auto start = std::chrono::high_resolution_clock::now();
 
     fuser.order_inferences();
 
+    std::cout << "Order inferences was ok" << std::endl;
+
     fuser.merge_intersections();
+
+    std::cout << "Merge_intersections was ok" << std::endl;
 
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double, std::milli> duration = end - start;
