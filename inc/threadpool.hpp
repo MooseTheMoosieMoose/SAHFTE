@@ -161,7 +161,7 @@ public:
                                 break;
                             }
 
-                            //We have items to process
+                            //We have items to process, capture and advance the iterator
                             cur_iter = item_iter;
                             std::advance(item_iter, 1);
                         }

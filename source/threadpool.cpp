@@ -1,8 +1,6 @@
 
 #include "threadpool.hpp"
 
-    #include <iostream>
-
 namespace FusionSystem {
 
 Threadpool::Threadpool() : queued_jobs_count(0), exit_flag(false) {}
