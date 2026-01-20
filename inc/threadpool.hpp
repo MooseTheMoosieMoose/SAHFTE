@@ -65,11 +65,10 @@ public:
      * @brief given some container that supports `begin()`, `end()`, map some task across the elements inside `container`,
      * split as `jobs` tasks. Will call `callable` with (T item, std::size_t indx) as the first two arguments
      * @note necessarily blocking to prevent pointer invalidation
-     * @note this specialization is for random access iterators, but should work for bi-directional too
-     * @todo Make a specialization for map
+     * @note this specialization is for random access iterators, such as std::vector, std::string, etc
      */
     template <typename Container, typename Func, typename... Args>
-    requires requires (Container container ){ { container.size() } -> std::convertible_to<std::size_t>; }
+    requires std::ranges::random_access_range<Container>
     void queue_and_map_task(Container& container, std::size_t jobs, Func&& callable, Args&&... args) {
         //Get the number of elements in the container
         const std::size_t element_count = container.size();
@@ -90,7 +89,7 @@ public:
         for (std::size_t i = 0; i < jobs; i++) {
             //Increment the job counter and calculate the end point of this job
             queued_jobs_count++;
-            auto lambda_iter_end = std::advance(lambda_iter_begin, elem_per_job);
+            auto lambda_iter_end = std::next(lambda_iter_begin, elem_per_job);
             if (i == jobs - 1 || lambda_iter_end > container.end()) {
                 lambda_iter_end = container.end();
             }
@@ -112,13 +111,75 @@ public:
             queue_cv.notify_one();
 
             //Advance the iterator
-            indx += static_cast<std::size_t>(lambda_iter_end - lambda_iter_begin);
+            indx += std::distance(lambda_iter_begin, lambda_iter_end);
             lambda_iter_begin = lambda_iter_end;
             
         }
 
         //We must wait to prevent pointer invalidation
         join_and_process();
+    }
+
+    /**
+     * @brief given some container that supports `begin()`, `end()`, map some task across the elements inside `container`,
+     * split as `jobs` tasks. Will call `callable` with (T item, std::size_t indx) as the first two arguments
+     * @note necessarily blocking to prevent pointer invalidation
+     * @note this specialization is for bi-directional iterators, such as std::map. Necessarily then, callable should NOT
+     * expect an indx, as they are meaningless in this context
+     */
+    template <typename Container, typename Func, typename... Args>
+    requires std::ranges::bidirectional_range<Container>
+    void queue_and_map_task(Container& container, std::size_t jobs, Func&& callable, Args&&... args) {
+        //Get the number of items, clip them agains the number of jobs if necessary
+        const std::size_t element_count = container.size();
+        if (jobs > element_count) {
+            jobs = element_count;
+        }
+
+        //Keep track of an iter protected by a mutex, so that queued jobs can poll this
+        auto begin_iter = container.begin();
+        auto item_iter = container.begin();
+        auto end_iter = container.end();
+        std::mutex container_iter_mtx {};
+
+        //Create each job, allow them to lock onto an element and pass it to their callable
+        for (std::size_t i = 0; i < jobs; i++) {
+            queued_jobs_count++;
+
+            //Add in a task, enforcing smallest scope on lock
+            {
+                std::lock_guard<std::mutex> lock(queue_mtx);
+                task_queue.push([&]() mutable {
+                    while (true) {
+                        auto cur_iter = end_iter;
+                        
+                        //Enforce scope on this lock too
+                        {
+                            //Lock the iter, and check to see if we have hit the end
+                            std::lock_guard<std::mutex> lock(container_iter_mtx);
+                            if (item_iter == end_iter) {
+                                break;
+                            }
+
+                            //We have items to process
+                            cur_iter = item_iter;
+                            std::advance(item_iter, 1);
+                        }
+
+                        std::invoke(callable, *cur_iter, args...);
+                    }
+                    
+                });
+            }
+
+            //Flag to our CV that a new task is ready
+            queue_cv.notify_one();
+
+        }
+
+        //Once all jobs are created, wait for the pool to finish
+        join_and_process();
+        
     }
 
     /**

@@ -213,8 +213,10 @@ public:
         pool.queue_and_map_task(
             clusters,
             pool.get_max_threads() + 1,
-            [&](std::pair<std::size_t, std::vector<std::size_t>>& cluster, std::size_t _) {
-                
+            [&](std::pair<const std::size_t, std::vector<std::size_t>>& cluster) {
+                for (std::size_t indx : cluster.second) {
+                    std::osyncstream(std::cout) << "Element: " << indx << std::endl;
+                }
             }
         );
     }

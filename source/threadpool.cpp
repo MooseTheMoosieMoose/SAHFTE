@@ -1,6 +1,8 @@
 
 #include "threadpool.hpp"
 
+    #include <iostream>
+
 namespace FusionSystem {
 
 Threadpool::Threadpool() : queued_jobs_count(0), exit_flag(false) {}
@@ -36,7 +38,7 @@ void Threadpool::join_and_process() {
             lock.lock();
             if (task_queue.empty()) {
                 lock.unlock();
-                return;
+                break;
             }
 
             auto runnable = task_queue.front();
@@ -85,7 +87,7 @@ void Threadpool::process_tasks() {
         //Then execute the job
         runnable();
 
-        std::size_t remaining = queued_jobs_count.fetch_sub(1);
+        std::size_t remaining = queued_jobs_count.fetch_sub(1) - 1;
         if (remaining == 0) {
             wait_cv.notify_all();
         }
