@@ -122,7 +122,7 @@ public:
 
     /**
      * @brief given some container that supports `begin()`, `end()`, map some task across the elements inside `container`,
-     * split as `jobs` tasks. Will call `callable` with (T item, std::size_t indx) as the first two arguments
+     * split as `jobs` tasks. Will call `callable` with (T item) as the first argument
      * @note necessarily blocking to prevent pointer invalidation
      * @note this specialization is for bi-directional iterators, such as std::map. Necessarily then, callable should NOT
      * expect an indx, as they are meaningless in this context

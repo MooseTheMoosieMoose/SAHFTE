@@ -22,7 +22,7 @@ int main(int argc, char* argv[]) {
     //Get the file paths that we will be writing
     const std::string gt_fp = "./test_data/all_objects_ground_truth.json";
     const std::string res_fp_base = "./test_data/";
-    std::vector<std::string> mod_names = {"camera_sim_results.json", "lidar_sim_results.json", "radar_sim_results.json"};
+    std::vector<std::string> mod_names = {"camera", "lidar", "radar"};
 
     //Open the ground truth file for the origin
     std::ifstream gt_file(gt_fp);
@@ -45,7 +45,7 @@ int main(int argc, char* argv[]) {
 
     //For each modality, extract their data
     for (const auto& mod_name : mod_names) {
-        std::string mod_fp = res_fp_base + mod_name;
+        std::string mod_fp = res_fp_base + mod_name + std::string("_sim_results.json");
         std::ifstream mod_file(mod_fp);
         if (!mod_file.is_open()) {
             std::cout << "Failed to open file: " << mod_name << std::endl;
@@ -71,29 +71,39 @@ int main(int argc, char* argv[]) {
             std::map<std::string, double> classification_map = {{classification, 1}};
 
             fuser.add_inference(Fuser::Inference{
-                .center = new_pos,
-                .dim = new_dim,
-                .classification = classification_map
+                new_pos,
+                new_dim,
+                std::move(mod_name),
+                std::move(classification_map)
             });
         }
     }
 
     std::cout << "Loaded succsessfully!" << std::endl;
 
+    //Assign Confidence Map
+    fuser.assign_confidence_map({
+        {{"camera", "pedestrian"},    1},
+        {{"camera", "vehicle"},       1},
+        {{"camera", "traffic_cone"},  1},
+        {{"lidar",  "pedestrian"},    1},
+        {{"lidar",  "vehicle"},       1},
+        {{"lidar",  "traffic_cone"},  1},
+        {{"radar",  "pedestrian"},    1},
+        {{"radar",  "vehicle"},       1},
+        {{"radar",  "traffic_cone"},  1},
+    });
+
     //Time
     auto start = std::chrono::high_resolution_clock::now();
 
     fuser.order_inferences();
-
-    std::cout << "Order inferences was ok" << std::endl;
-
     fuser.merge_intersections();
 
-    std::cout << "Merge_intersections was ok" << std::endl;
 
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double, std::milli> duration = end - start;
-    std::cout << "Program executed in: " << duration.count() << " ms" << std::endl;
+    std::cout << "Infrences sorted and merged in: " << duration.count() << " ms" << std::endl;
 
     return 0;
 }

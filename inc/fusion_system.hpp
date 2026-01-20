@@ -7,15 +7,12 @@
     #include <iostream>
     #include <syncstream>
 #include <cmath>
-#include <shared_mutex>
-#include <atomic>
 #include <execution>
 #include <algorithm>
 #include <numeric>
 
 #include "common.hpp"
 #include "mtx_ds.hpp"
-#include "chunk_allocator.hpp"
 #include "threadpool.hpp"
 #include "coord_conv.hpp"
 
@@ -27,6 +24,7 @@ public:
     struct Inference {
         Vec3D center;
         Vec3D dim;
+        std::string modality;
         std::map<std::string, double> classification;
     };
 private:
@@ -112,7 +110,7 @@ public:
         //Ensure that the z_buffer has enough elements in memory so that we can write directly to indicies
         z_buff.resize(inferences.size());
 
-        //Have the threadpool convert the coords to Z-order and add them to the multiset, this is blocking
+        //Have the threadpool convert the coords to Z-order and add them to the z_buff, this is blocking
         pool.queue_and_map_task(
             inferences,
             pool.get_max_threads() + 1,
@@ -156,6 +154,7 @@ public:
                 const auto subject_center = geo_to_local(ref_origin, subject->center);
 
                 //Pick a conceivably close distance where we can stop looking for neighbors
+                //TODO techniqucally we could instead of picking distances create a Z-order code for this but thats for later
                 const double max_range = 2 * std::max({subject->dim.x, subject->dim.y, subject->dim.z});
 
                 //Pick a number of misses before we abandon the search
@@ -208,17 +207,50 @@ public:
         }
 
         //Step 4
-        //For each cluster, create the fusion
-        std::shared_mutex clusters_mtx {};
+        //For each cluster, create the fusion, remember that the indicies received are into the Z_buffer
+        /**
+         * Weighted Average: it's found by multiplying each value by its weight, summing those products, and then dividing by the total sum of the weights
+         */
         pool.queue_and_map_task(
             clusters,
             pool.get_max_threads() + 1,
             [&](std::pair<const std::size_t, std::vector<std::size_t>>& cluster) {
+                //Now we can create each cluster as an average of these points
+                Vec3D average_center {0.0, 0.0, 0.0};
+                Vec3D average_dim {0.0, 0.0, 0.0};
+                std::map<std::string, double> classifications {};
+                const double cluster_size = cluster.second.size();
                 for (std::size_t indx : cluster.second) {
-                    std::osyncstream(std::cout) << "Element: " << indx << std::endl;
+                    //Add to the average
+                    average_center = average_center + z_buff[indx].indx->center;
+                    average_dim = average_dim + z_buff[indx].indx->dim;
+
+                    //Get the classifications and add them to the list
+                    auto& new_classifs = z_buff[indx].indx->classification;
+                    for (const auto& pair : new_classifs) {
+
+                    }
+
                 }
+
+                //Normalize the center and dimensions
+                average_center = average_center / cluster_size;
+                average_dim = average_dim / cluster_size;
+
+                //Add the final output to the output vector
+                output.push(Inference{
+                    average_center,
+                    average_dim,
+                    "Fusion",
+                    std::move(classifications)
+                });
+
             }
         );
+    }
+
+    void assign_confidence_map(std::map<std::tuple<std::string, std::string>, double>&& map) {
+        confidence_map = std::move(map);
     }
 
     /**
@@ -256,13 +288,13 @@ private:
     std::vector<Inference> inferences;
 
     //A map which keys {modality, class} -> confidence for weighted averaging
-    std::map<std::tuple<std::string, std::string>, double> confidence_map;
+    std::map<std::tuple<std::string, std::string>, double> confidence_map {};
 
     //A Working copy of the z_order_buff that is random access, and easier to work with
     std::vector<ZOrderedPtr> z_buff {};
 
-    //A Threadsafe vector that holds the results of fusion
-    TSVector<Inference> output {};
+    //A Threadsafe queue that holds the results of fusion
+    TSQueue<Inference> output {};
 
     //The Threadpool that we use to distribute work
     Threadpool pool {};
