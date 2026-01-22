@@ -52,7 +52,7 @@ public:
         return storage.size();
     }
 
-    const std::queue<T>& storage_ref() {
+    std::queue<T>& storage_ref() {
         return storage;
     }
 

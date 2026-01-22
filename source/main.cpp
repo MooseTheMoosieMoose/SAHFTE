@@ -105,5 +105,19 @@ int main(int argc, char* argv[]) {
     std::chrono::duration<double, std::milli> duration = end - start;
     std::cout << "Infrences sorted and merged in: " << duration.count() << " ms" << std::endl;
 
+    std::cout << "Final Infrence clusters: " << std::endl;
+    auto& output_q = fuser.get_output();
+    while (output_q.size() != 0) {
+        auto elem = output_q.front();
+        output_q.pop();
+        std::cout << "Item centered at: " << elem.center.to_string() << std::endl;
+        std::cout << "Item Dim: " << elem.dim.to_string() << std::endl;;
+        std::cout << "Item Class List: " << std::endl;
+        for (const auto& class_pair : elem.classification) {
+            std::cout << "Class: " << class_pair.first << " Weight: " << class_pair.second << std::endl;
+        }
+        std::cout << "\n\n" << std::endl;
+    }
+
     return 0;
 }

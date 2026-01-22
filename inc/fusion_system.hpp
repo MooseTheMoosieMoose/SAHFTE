@@ -209,7 +209,7 @@ public:
         //Step 4
         //For each cluster, create the fusion, remember that the indicies received are into the Z_buffer
         /**
-         * Weighted Average: it's found by multiplying each value by its weight, summing those products, and then dividing by the total sum of the weights
+         * "Weighted Average: it's found by multiplying each value by its weight, summing those products, and then dividing by the total sum of the weights"
          */
         pool.queue_and_map_task(
             clusters,
@@ -218,8 +218,11 @@ public:
                 //Now we can create each cluster as an average of these points
                 Vec3D average_center {0.0, 0.0, 0.0};
                 Vec3D average_dim {0.0, 0.0, 0.0};
-                std::map<std::string, double> classifications {};
-                const double cluster_size = cluster.second.size();
+
+                //To average the classification, we need to keep track of the total confidences and how many items were assigned to it
+                //This map keys classification -> {sum of confidences, sum of weights}
+                std::map<std::string, std::pair<double, double>> classification_tracker {};
+                
                 for (std::size_t indx : cluster.second) {
                     //Add to the average
                     average_center = average_center + z_buff[indx].indx->center;
@@ -227,17 +230,46 @@ public:
 
                     //Get the classifications and add them to the list
                     auto& new_classifs = z_buff[indx].indx->classification;
+                    auto& mod_name = z_buff[indx].indx->modality;
                     for (const auto& pair : new_classifs) {
+                        //For each classification it could be, we must get its name and score
+                        auto& class_name = pair.first;
+                        double class_score = pair.second;
 
+                        //To get its associated weight in our weight map, we create the key
+                        //TODO if the weight is not defined for a class it defaults to one, this could be customizable
+                        double weight = 1;
+                        auto weight_iter = confidence_map.find({mod_name, class_name});
+                        if (weight_iter != confidence_map.end()) {
+                            weight = weight_iter->second;
+                        }
+
+                        //Store the weighted average building blocks in the classification tracker
+                        classification_tracker[class_name].first += (class_score * weight);
+                        classification_tracker[class_name].second += weight;
                     }
 
                 }
 
                 //Normalize the center and dimensions
+                const double cluster_size = cluster.second.size();
                 average_center = average_center / cluster_size;
                 average_dim = average_dim / cluster_size;
 
-                //Add the final output to the output vector
+                //Transform the classifications into a weighted average
+                std::map<std::string, double> classifications {};
+                for (const auto& [class_name, weight_set] : classification_tracker) {
+
+                    //Check to prevent a divide by zero error
+                    if (weight_set.second > 0) {
+                        classifications[class_name] = weight_set.first / weight_set.second;
+                    } else {
+                        //If the total weights equal zero its zero
+                        classifications[class_name] = 0;
+                    }
+                }
+                
+                //Finally, push the inference to the output queue
                 output.push(Inference{
                     average_center,
                     average_dim,
@@ -249,8 +281,12 @@ public:
         );
     }
 
-    void assign_confidence_map(std::map<std::tuple<std::string, std::string>, double>&& map) {
+    void assign_confidence_map(std::map<std::pair<std::string, std::string>, double>&& map) {
         confidence_map = std::move(map);
+    }
+
+    std::queue<Inference>& get_output() {
+        return output.storage_ref();
     }
 
     /**
@@ -288,7 +324,7 @@ private:
     std::vector<Inference> inferences;
 
     //A map which keys {modality, class} -> confidence for weighted averaging
-    std::map<std::tuple<std::string, std::string>, double> confidence_map {};
+    std::map<std::pair<std::string, std::string>, double> confidence_map {};
 
     //A Working copy of the z_order_buff that is random access, and easier to work with
     std::vector<ZOrderedPtr> z_buff {};
