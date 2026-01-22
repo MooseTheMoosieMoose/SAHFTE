@@ -43,35 +43,32 @@ vehicle_speed = 11.176
 METER_PER_DEG_LAT = 1 / 111111
 
 class Coordinate:
-    def __init__(self, lat = random.uniform(-90, 90), long = random.uniform(-180, 180), altitude = random.uniform(-86, 8850)):
-        self.latitude = lat
-        self.longitude = long
-        self.altitude = altitude
+    def __init__(self, lat=None, long=None, altitude=None):
+        self.latitude = lat if lat is not None else random.uniform(-90, 90)
+        self.longitude = long if long is not None else random.uniform(-180, 180)
+        self.altitude = altitude if altitude is not None else random.uniform(-86, 8850)
 
     def clip(self):
-        self.latitude = max(-90, min(90, self.latitude))
-        if self.longitude > 180:
-            self.longitude -= 360
-        elif self.longitude < -180:
-            self.longitude += 360
+            self.latitude = max(-90, min(90, self.latitude))
+            # Use modulo to wrap correctly regardless of how large the number is
+            self.longitude = (self.longitude + 180) % 360 - 180
 
     def jitter(self, planar_distance, altitude_shift):
-        """
-        Creates a new coordinate that is shifted around the lat/long plane by distance meters, with a
-        random shift in altitude on the range [altitude_shift/2]
-
-        :param planar_distance: the jitter distance for the lat/long in meters
-        :param altitude_shift: the altitude shift in meters
-        """
         angle_of_travel = random.uniform(0, 2 * math.pi)
         
         end_lat = self.latitude + (math.cos(angle_of_travel) * planar_distance * METER_PER_DEG_LAT)
         
-        end_long = 0
-        if (self.latitude != 0):
-            end_long = self.longitude + (math.sin(angle_of_travel) * planar_distance * METER_PER_DEG_LAT / math.cos(math.radians(self.latitude)))
+        # Initialize end_long with current longitude
+        end_long = self.longitude
+        
+        # Only calculate longitude shift if we are not dangerously close to a pole
+        # This prevents the "Pole Singularity" explosion
+        if abs(self.latitude) < 89.9:
+            # Removed "if lat != 0" check. cos(0) is 1, so this is safe at the equator.
+            end_long += (math.sin(angle_of_travel) * planar_distance * METER_PER_DEG_LAT / math.cos(math.radians(self.latitude)))
 
         end_altitude = self.altitude + random.uniform(-1 * (altitude_shift / 2), (altitude_shift / 2))
+        
         new_coord = Coordinate(end_lat, end_long, end_altitude)
         new_coord.clip()
         return new_coord
@@ -197,12 +194,13 @@ def main() -> None:
 
     #And the ground truth
     print("Dumping ground truth")
-    file_path = store_folder_path / f"all_objects_ground_truth.json"
+    file_path = store_folder_path / f"gt_sim_results.json"
     ground_truth = {
         "start_pos" : [start_pos.latitude, start_pos.longitude, start_pos.altitude],
         "end_pos" : [end_pos.latitude, end_pos.longitude, end_pos.altitude],
         "distance" : distance,
         "simulated_duration" : frame_time_length,
+        "modality" : "gt",
         "inferences" : all_objects
     }
     with open(file_path, "w") as file:

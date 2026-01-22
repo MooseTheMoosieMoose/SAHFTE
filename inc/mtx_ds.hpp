@@ -87,7 +87,7 @@ public:
         return storage.size();
     }
 
-    const std::vector<T>& storage_ref() {
+    std::vector<T>& storage_ref() {
         return storage;
     }
 

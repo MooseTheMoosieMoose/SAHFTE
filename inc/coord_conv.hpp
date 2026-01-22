@@ -35,13 +35,13 @@ constexpr Vec3D geo_to_local(const Vec3D& origin, const Vec3D& target) {
 }
 
 /**
- * @brief takes in a global position and converts them to a position along a Z-order curve in 3d space
+ * @brief takes in a local position and converts it to a position along a Z-order curve in 3d space
  * @note this works by converting from global positions, assuming that distances are short enough that we
  * can treat the coordinate system as a flat plane, and creating a cube space where the center is at
  * @note 1 <= bit_depth <= 21, otherwise the passed value will be clipped to this range
  */
-constexpr std::optional<uint64_t> geo_to_z_order(
-            const Vec3D& target, const Vec3D& origin, const Vec3D& z_volume, uint8_t bit_depth
+constexpr std::optional<uint64_t> local_to_z_order(
+            const Vec3D& local_target, const Vec3D& origin, const Vec3D& z_volume, uint8_t bit_depth
 ) {
     //Clip the bit depth
     if (bit_depth == 0) {
@@ -55,15 +55,12 @@ constexpr std::optional<uint64_t> geo_to_z_order(
     double x_res = z_volume.x / cell_scale;
     double y_res = z_volume.y / cell_scale;
     double z_res = z_volume.z / cell_scale;
-
-    //Get the relative position in meters
-    auto relative_pos = geo_to_local(origin, target);
     
     //Normalize to the grid and offset so that the origin as the center
     const double half_cell_scale = (1 << (bit_depth - 1));
-    double x_grid = (relative_pos.x / x_res) + half_cell_scale;
-    double y_grid = (relative_pos.y / y_res) + half_cell_scale;
-    double z_grid = (relative_pos.z / z_res) + half_cell_scale;
+    double x_grid = (local_target.x / x_res) + half_cell_scale;
+    double y_grid = (local_target.y / y_res) + half_cell_scale;
+    double z_grid = (local_target.z / z_res) + half_cell_scale;
 
     //Check for bounds, flooring allows the coords to act as buckets on lines,
     //instead of midpoints which will probably be easier to rationalize, keeping it
@@ -82,8 +79,8 @@ constexpr std::optional<uint64_t> geo_to_z_order(
     //Aight its inthe bounds, we can then cast it back to an unsigned int for the next
     //operations
     uint64_t x_int = static_cast<uint64_t>(x_idx);
-    uint64_t y_int = static_cast<uint64_t>(x_idx);
-    uint64_t z_int = static_cast<uint64_t>(x_idx);
+    uint64_t y_int = static_cast<uint64_t>(y_idx);
+    uint64_t z_int = static_cast<uint64_t>(z_idx);
 
     //Interleave into a Z-order coordinate
     uint64_t z_val = 0;

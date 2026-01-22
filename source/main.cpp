@@ -17,10 +17,32 @@
 using json = nlohmann::json;
 using namespace FusionSystem;
 
+struct InferenceData {
+    double timestamp;
+    std::string class_name;
+    double latitude;
+    double longitude;
+    double altitude;
+    Vec3D dim;
+    std::size_t obj_id;
+};
+
+void to_json(json& j, const InferenceData& d) {
+    j = json {
+        {"timestamp", 0.0},
+        {"class", d.class_name},
+        {"latitude", d.latitude},
+        {"longitude", d.longitude},
+        {"altitude", d.altitude},
+        {"dimensions", std::vector<double>{d.dim.x, d.dim.y, d.dim.z}},
+        {"obj_id", 0.0}
+    };
+}
+
 
 int main(int argc, char* argv[]) {
     //Get the file paths that we will be writing
-    const std::string gt_fp = "./test_data/all_objects_ground_truth.json";
+    const std::string gt_fp = "./test_data/gt_sim_results.json";
     const std::string res_fp_base = "./test_data/";
     std::vector<std::string> mod_names = {"camera", "lidar", "radar"};
 
@@ -41,7 +63,7 @@ int main(int argc, char* argv[]) {
     std::cout << "Ground truth data puts origin at: " << origin.to_string() << std::endl;
 
     //Create the instance of our Fuser
-    Fuser fuser(4, 8, Vec3D{100, 100, 100}, origin);
+    Fuser fuser(4, 8, Vec3D{250, 250, 250}, origin);
 
     //For each modality, extract their data
     for (const auto& mod_name : mod_names) {
@@ -70,16 +92,11 @@ int main(int argc, char* argv[]) {
             std::string classification = det["class"];
             std::map<std::string, double> classification_map = {{classification, 1}};
 
-            fuser.add_inference(Fuser::Inference{
-                new_pos,
-                new_dim,
-                std::move(mod_name),
-                std::move(classification_map)
-            });
+            fuser.add_inference(new_pos, new_dim, mod_name, std::move(classification_map));
         }
     }
 
-    std::cout << "Loaded succsessfully!" << std::endl;
+    std::cout << "Step 1 Complete: JSON data Loaded succsessfully!" << std::endl;
 
     //Assign Confidence Map
     fuser.assign_confidence_map({
@@ -95,17 +112,22 @@ int main(int argc, char* argv[]) {
     });
 
     //Time
+    std::cout << "Step 2 Complete: Confidence Map Assigned, starting performance clock" << std::endl; 
     auto start = std::chrono::high_resolution_clock::now();
 
-    fuser.order_inferences();
-    fuser.merge_intersections();
+    fuser.fuse();
 
 
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double, std::milli> duration = end - start;
-    std::cout << "Infrences sorted and merged in: " << duration.count() << " ms" << std::endl;
+    std::cout << "Step 3: Infrences sorted and merged in: " << duration.count() << " ms" << std::endl;
 
+    //Dump to JSON and log
     std::cout << "Final Infrence clusters: " << std::endl;
+    json output_data;
+    output_data["modality"] = "fusion";
+    std::vector<InferenceData> dump_data {};
+
     auto& output_q = fuser.get_output();
     while (output_q.size() != 0) {
         auto elem = output_q.front();
@@ -117,7 +139,23 @@ int main(int argc, char* argv[]) {
             std::cout << "Class: " << class_pair.first << " Weight: " << class_pair.second << std::endl;
         }
         std::cout << "\n\n" << std::endl;
+
+        dump_data.push_back(InferenceData{
+            0,
+            "FixMe",
+            elem.center.x,
+            elem.center.y,
+            elem.center.z,
+            elem.dim,
+            0
+        });
     }
+
+    output_data["inferences"] = dump_data;
+    std::ofstream file("./test_data/fusion_sim_results.json");
+    file << output_data.dump(4);
+
+    std::cout << "Json Dumped" << std::endl;
 
     return 0;
 }
