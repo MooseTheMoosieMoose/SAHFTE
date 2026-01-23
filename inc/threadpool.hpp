@@ -1,18 +1,34 @@
+/**                                                      
+ *  ,---.    ,---.  ,--.  ,--.,------.,--------.,------. 
+ * '   .-'  /  O  \ |  '--'  ||  .---''--.  .--'|  .---' 
+ * `.  `-. |  .-.  ||  .--.  ||  `--,    |  |   |  `--,  
+ * .-'    ||  | |  ||  |  |  ||  |`      |  |   |  `---. 
+ * `-----' `--' `--'`--'  `--'`--'       `--'   `------'                                                      
+ * 
+ * SAHFTE (Spatial Algorithmic Hashing Fusion Time-sliced Engine)
+ * @file threadpool.hpp
+ * @author Moose Abou-Harb
+ * @brief this file  contains the headers and necessary templates for working with the threadpool system that
+ * SAHFTE uses, care should be taken while editing this file as its arguably the most complex part with its templates
+ * @copyright `26, Lisenced under whatever Paccar Inc.'s requirements are
+ */
+
 #pragma once
 
-#include <thread>
-#include <mutex>
-#include <queue>
-#include <vector>
-#include <functional>
-#include <atomic>
-#include <condition_variable>
-#include <concepts>
+#include <thread>             //Provides execution threads to manage, (it aint a threadpool cause its a bobbin)
+#include <mutex>              //Provides a locking mechanism to protect various objects
+#include <queue>              //Provides a FIFO optimized structure to push tasks onto
+#include <vector>             //A nice easy container to store the threads we are managing
+#include <functional>         //A heavy yet highly generic wrapper around callables
+#include <atomic>             //Gets us the `std::atomic` wrapper for atomic objects
+#include <condition_variable> //Gets us condition variables to prevent pointless spinning when tasks are processed
+#include <concepts>           //Helps us restrict the input to some templates
 
 namespace FusionSystem {
 
 /**
- * @brief a basic threadpool for tasks that require args, but are void return typed
+ * @brief a basic threadpool for tasks that require args, but are void return typed. Uses a fork-join model mainly to safely
+ * manage tasks that require mapping over containers
  * @note if `std::thread::hardware_concurancy` < `thread_count`, then the threadpool will only
  * use `std::thread::hardware_concurancy` threads
  * @note due to STD limitations on std::functional, this pool cannot manage tasks that required move-only
@@ -20,6 +36,9 @@ namespace FusionSystem {
  */
 class Threadpool {
 public:
+/*=====================================================================================================
+                             Constructors, Destructors and the Big 5
+=====================================================================================================*/
     /**
      * @brief normal constructor for a threadpool
      */
@@ -30,18 +49,49 @@ public:
      */
     ~Threadpool();
 
-    Threadpool (const Threadpool& other) = delete; //We do not want our threadpool copied
-    Threadpool& operator=(const Threadpool& other) = delete; //We do not want copy assignment either
-    Threadpool (Threadpool&& other) = delete; //Moving is also naughty
-    Threadpool& operator=(Threadpool&& other) = delete; //Move assignment is still bad
+    /**
+     * @brief due to the objects that `Threadpool` manages, this is not safe to be copy constructed
+     */
+    Threadpool (const Threadpool& other) = delete;
+
+    /**
+     * @brief due to the objects that `Threadpool` manages, this is not safe to be copy assignment constructed
+     */
+    Threadpool& operator=(const Threadpool& other) = delete;
+
+    /**
+     * @brief due to the objects that `Threadpool` manages, this is not safe to be move constructed
+     */
+    Threadpool (Threadpool&& other) = delete;
+
+    /**
+     * @brief due to the objects that `Threadpool` manages, this is not safe to be move assignment constructed
+     */
+    Threadpool& operator=(Threadpool&& other) = delete;
+
+/*=====================================================================================================
+                                     Interface Functions and Templates
+=====================================================================================================*/
 
     /**
      * @brief spins up the threads that the pool will use, this should only be called once!
+     * @param thread_count the number of auxillary threads to use in the pool. You should note that when using the mapping
+     * functions, best practice is to split it along `get_max_threads() + 1` jobs since the caller thread doesnt count as
+     * a thread in the pool
+     * @note this is necessarily not a part of the constructor due to the wacky lifetimes this object manages, this must be
+     * called before other tasks are pushed, otherwise nothing will happen
      */
     void initilize_threads(std::size_t thread_count);
 
     /**
-     * @brief a template type-eraser that allows you to place any  `void` returning callable into queue 
+     * @brief a template type-eraser that allows you to place any  `void` returning callable into queue for execution. When
+     * the queued task is executed by the pool, it will call `callable(args...)`
+     * @param callable an object that is callable under `args...`, this can be a lambda, a named function, an overload of
+     * operator(), anything so long as it is `void` returning
+     * @param args a variable sized parameter list that are the requested args for `callable`, this MUST match the args needed
+     * for callable, otherwise you will get some *nasty* compiler errors
+     * @note you should be careful with any form of data inserted to prevent data invalidation. The best way to do this
+     * is to prepare all of your jobs, then call `join_and_process()` to fufill the fork-join approach of this pool
      */
     template <typename Func, typename... Args>
     void queue_task(Func&& callable, Args&&... args) {
@@ -63,7 +113,12 @@ public:
 
     /**
      * @brief given some container that supports `begin()`, `end()`, map some task across the elements inside `container`,
-     * split as `jobs` tasks. Will call `callable` with (T item, std::size_t indx) as the first two arguments
+     * split as `jobs` tasks. Will call `callable` with `callable(T item, std::size_t indx, args...)`
+     * @param container some object that satisfies the requirements of `std::ranges::random_access_iterator`
+     * @param callable an object that is callable under `args...`, this can be a lambda, a named function, an overload of
+     * operator(), anything so long as it is `void` returning
+     * @param args a variable sized parameter list that are the requested args for `callable`, this MUST match the args needed
+     * for callable, otherwise you will get some *nasty* compiler errors
      * @note necessarily blocking to prevent pointer invalidation
      * @note this specialization is for random access iterators, such as std::vector, std::string, etc
      */
@@ -122,10 +177,18 @@ public:
 
     /**
      * @brief given some container that supports `begin()`, `end()`, map some task across the elements inside `container`,
-     * split as `jobs` tasks. Will call `callable` with (T item) as the first argument
-     * @note necessarily blocking to prevent pointer invalidations
-     * @note this specialization is for bi-directional iterators, such as std::map. Necessarily then, callable should NOT
-     * expect an indx, as they are meaningless in this context
+     * split as `jobs` tasks. Will call `callable` with `callable(T item, args...)`
+     * @param container some object that satisfies the requirements of `std::forward_iterator`
+     * @param callable an object that is callable under `args...`, this can be a lambda, a named function, an overload of
+     * operator(), anything so long as it is `void` returning
+     * @param args a variable sized parameter list that are the requested args for `callable`, this MUST match the args needed
+     * for callable, otherwise you will get some *nasty* compiler errors
+     * @note necessarily blocking to prevent pointer invalidation
+     * @note this specialization is for forward_iterators, which is just about as basic as it gets, allowing you to apply this with
+     * things like `std::map`, `std::unordered_map`, etc. However, this will probably be slower than the specialization for
+     * random access iterators
+     * @note this specialization does not give you access to a container index, as objects with this iterator trait are not garunteed
+     * to have a meaningful equivalent to an index
      */
     template <typename Container, typename Func, typename... Args>
     requires std::ranges::forward_range<Container>
@@ -184,24 +247,33 @@ public:
 
     /**
      * @brief attaches the calling thread as a thread running the tasks queued in the pool, is blocking
-     * until the number of jobs in the pool is reduced to 0
+     * until all queued jobs at the time of calling are finished
      * @note sort of analogous to `join()` in other libraries, but instead of sitting around, the joining 
      * thread helps out in the pool
+     * @note this is called for you when using `queue_and_map_tasks`
      */
     void join_and_process();
 
     /**
      * @brief gets the number of queued elements, which is internally stored as an `atomic<std::size_t>`,
-     * this number is understandably volatile, especially if being read while enqueing tasks
+     * this number is understandably volatile, especially if being read while enqueing tasks, or when
+     * tasks are being processed
+     * @return the number of tasks queued in the pool
      */
     std::size_t get_queued_count() const noexcept;
 
-    std::size_t get_max_threads() const noexcept {
-        return max_threads;
-    }
+    /**
+     * @brief returns the maximum number of threads that can be in use directly by the pool at once
+     * @return the max number of threads, the same number as is passed when calling `initilize_threads()`
+     */
+    std::size_t get_max_threads() const noexcept;
 
 
 private:
+/*=====================================================================================================
+                                            Class Members
+=====================================================================================================*/
+    //The total number of threads in the pool, essentially a cached value for `threads.size()`
     std::size_t max_threads;
 
     //Threads holds all the threads managed by the pool
@@ -228,6 +300,13 @@ private:
     //Wait CV so we dont burn cycles waiting for the TP to finish
     std::condition_variable wait_cv {};
 
+/*=====================================================================================================
+                                    Private Utility Functions
+=====================================================================================================*/
+    /**
+     * @brief the function that is attached to every thread that is managed by the pool. This function handles
+     * exit signals, and flagging so that they should sleep when not in use, and wake up when items are queued.
+     */
     void process_tasks();
 };
 

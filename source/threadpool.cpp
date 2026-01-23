@@ -61,6 +61,10 @@ std::size_t Threadpool::get_queued_count() const noexcept {
     return queued_jobs_count.load();
 }
 
+std::size_t Threadpool::get_max_threads() const noexcept {
+    return max_threads;
+}
+
 void Threadpool::process_tasks() {
     //Create a lock that the condition variable will capture
     std::unique_lock<std::mutex> lock(queue_mtx);

@@ -1,19 +1,31 @@
-#pragma once
+/**                                                      
+ *  ,---.    ,---.  ,--.  ,--.,------.,--------.,------. 
+ * '   .-'  /  O  \ |  '--'  ||  .---''--.  .--'|  .---' 
+ * `.  `-. |  .-.  ||  .--.  ||  `--,    |  |   |  `--,  
+ * .-'    ||  | |  ||  |  |  ||  |`      |  |   |  `---. 
+ * `-----' `--' `--'`--'  `--'`--'       `--'   `------'                                                      
+ * 
+ * SAHFTE (Spatial Algorithmic Hashing Fusion Time-sliced Engine)
+ * @file common.cpp
+ * @author Moose Abou-Harb
+ * @brief this file  contains the function definitions for the headers deinfed in common.hpp
+ * @copyright `26, Lisenced under whatever Paccar Inc.'s requirements are
+ */
 
-#include <cmath>
-#include <numbers>
-#include <cstdint>
-#include <optional>
+#include <cmath>       //Useful math functions like round, floor, abs, etc
+#include <numbers>     //gets us PI
+#include <cstdint>     //Gets us standard sized integers (uint32_t, etc)
+#include <optional>    //Gets us C++17's optional types
 
-#include "common.hpp"
+#include "common.hpp"  //Gets the headers and prototypes for this file
 
 namespace FusionSystem {
 
-/**
- * @brief takes in a position, `origin`, and a position `target` and produces a `Vec3D` where the components
- * represent signed distances in meters from `target` to `origin`
- */
-constexpr Vec3D geo_to_local(const Vec3D& origin, const Vec3D& target) {
+/*=====================================================================================================
+                                           Coord Converter Functions
+=====================================================================================================*/
+
+Vec3D geo_to_local(const Vec3D& origin, const Vec3D& target) {
     //Define useful consts for the calculations
     const double earth_radius = 6378137.0;
     constexpr double deg_to_rad = std::numbers::pi / 180.0;
@@ -34,14 +46,8 @@ constexpr Vec3D geo_to_local(const Vec3D& origin, const Vec3D& target) {
     return Vec3D{x_meters, y_meters, d_alt};
 }
 
-/**
- * @brief takes in a local position and converts it to a position along a Z-order curve in 3d space
- * @note this works by converting from global positions, assuming that distances are short enough that we
- * can treat the coordinate system as a flat plane, and creating a cube space where the center is at
- * @note 1 <= bit_depth <= 21, otherwise the passed value will be clipped to this range
- */
-constexpr std::optional<uint64_t> local_to_z_order(
-            const Vec3D& local_target, const Vec3D& origin, const Vec3D& z_volume, uint8_t bit_depth
+std::optional<uint64_t> local_to_z_order(
+    const Vec3D& local_target, const Vec3D& z_volume, uint8_t bit_depth
 ) {
     //Clip the bit depth
     if (bit_depth == 0) {
@@ -95,8 +101,8 @@ constexpr std::optional<uint64_t> local_to_z_order(
     return std::optional(z_val);
 }
 
-constexpr double distance_between(const Vec3D& a, const Vec3D& b) {
+double distance_between(const Vec3D& a, const Vec3D& b) {
     return std::sqrt(std::pow((b.x - a.x), 2) + std::pow((b.y - a.y), 2) + std::pow((b.y - a.y), 2));
 }
 
-}; //End namespace fusion system
+} //End namespace Fusion System

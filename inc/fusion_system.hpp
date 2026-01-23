@@ -1,27 +1,51 @@
+/**                                                      
+ *  ,---.    ,---.  ,--.  ,--.,------.,--------.,------. 
+ * '   .-'  /  O  \ |  '--'  ||  .---''--.  .--'|  .---' 
+ * `.  `-. |  .-.  ||  .--.  ||  `--,    |  |   |  `--,  
+ * .-'    ||  | |  ||  |  |  ||  |`      |  |   |  `---. 
+ * `-----' `--' `--'`--'  `--'`--'       `--'   `------'                                                      
+ * 
+ * SAHFTE (Spatial Algorithmic Hashing Fusion Time-sliced Engine)
+ * @file fusion_system.hpp
+ * @author Moose Abou-Harb
+ * @brief this file  contains the headers and structs needed to interact with the Fusion System, when building as
+ * a library this should serve as the primary header interface
+ * @copyright `26, Lisenced under whatever Paccar Inc.'s requirements are
+ */
+
 #pragma once
 
-#include <unordered_map>
-#include <string>
-#include <tuple>
-#include <cstdint>
-#include <cmath>
-#include <execution>
-#include <algorithm>
-#include <numeric>
+#include <unordered_map> //For hash maps
+#include <string>        //For dynamic strings
+#include <cstdint>       //For standard ints (uint32_t, etc)
 
     #include <iostream>
-    //#include <syncstream>
+    //#include <syncstream> //Uncomment me if you want to add synced output for debugging
 
-#include "common.hpp"
-#include "mtx_ds.hpp"
-#include "threadpool.hpp"
-#include "coord_conv.hpp"
+#include "common.hpp"     //Common coord conversions and Vec3D
+#include "mtx_ds.hpp"     //Thread safe queues and vectors
+#include "threadpool.hpp" //The threadpool
 
 namespace FusionSystem {
 
 /**
- * @brief a Fuser takes in a set of infrences, and produces a fused output based on position, size,
+ * @brief a Fuser takes in a set of inferences, and produces a fused output based on position, size,
  * classifications, and an internal confidence map
+ * @note Interacting with this system should have the following steps:
+ * 1. Construct an instance of the `Fuser` object with a given number of auxillary threads, a bit_depth, a 
+ * fusion volume and the current origin
+ * 
+ * 2. Add any extra details needed like `assign_confidence_map()` to tweak the system as needed
+ * 
+ * 3. In a loop perform the following:
+ * 
+ * 3.a. Ensure your origin is up to date with `assign_origin()`
+ * 
+ * 3.b. Add infrences using the `add_inference()` methods
+ * 
+ * 3.c. Instruct the system to perform a fusion with the `fuse()` method
+ * 
+ * 3.d. Pop fused outputs using the `get_output()` method
  */
 class Fuser {
 public:
@@ -29,6 +53,18 @@ public:
                              Constructors, Destructors and the Big 5
 =====================================================================================================*/
 
+    /**
+     * @brief the constructor for the Fuser Object
+     * @note this object is not copy constructable or movable, that is becuase it manages several threading things
+     * that do not support thoes operations
+     * @param thread_count is the number of auxillary threads you want the threadpool to utilize. All threaded operations
+     * work under a fork-join model, where work is distributed across the auxillary and calling threads
+     * @param spatial_bit_depth as an optimization, all infrences are sorted along a Z-order curve, this number is bounded
+     * on 1 <= bit_depth <= 21, and defines the number of divisions in the volume that the Z-order curve will use. The higher this
+     * number the more granular the spatial division, but this has diminishing returns
+     * @param volume is the total space around the reference origin that we are interested in. This is in meters.
+     * @param starting_origin the point in global space (latitude, longitude, altitude) where the fusion will center around
+     */
     Fuser(std::size_t thread_count, uint8_t spatial_bit_depth, Vec3D volume, Vec3D starting_origin) :
         bit_depth(spatial_bit_depth),
         bounding_volume(volume),
@@ -39,18 +75,41 @@ public:
         
     }
 
+    /**
+     * @brief the destructor of the system, which is default defined to allow the compiler to call all our 
+     * child destructors when this object goes out of scope
+     * @note this is not meant to be called manually, unless you really know what you are doing!
+     */
     ~Fuser() = default;
+
+    /**
+     * @brief the copy constructor for the object, deleted due to the complex threading that this object manages
+     */
     Fuser (const Fuser& other) = delete;
+
+    /**
+     * @brief the copy assignment constructor for the object, deleted due to the complex threading that this object manages
+     */
     Fuser& operator=(const Fuser& other) = delete;
+
+    /**
+     * @brief the move constructor for the object, deleted due to the complex threading that this object manages
+     */
     Fuser (Fuser&& other) = delete;
+
+    /**
+     * @brief the move assignment constructor for the object, deleted due to the complex threading that this object manages
+     */
     Fuser& operator=(Fuser&& other) = delete;
 
 /*=====================================================================================================
                             Public Structs for I/O for this Class
 =====================================================================================================*/
 
-    //A Struct which holds the details of an object detection for input, also stores helpful information
-    //that can be cached and used throughout the fusion process
+    /**
+     * @brief A Struct which holds the details of an object detection for input, also stores helpful information that 
+     * can be cached and used throughout the fusion process
+     */
     struct InputInference {
         //Global space center
         Vec3D center;
@@ -67,22 +126,42 @@ public:
         //The modality name
         std::string modality;
 
-        //A map which keys mod_name -> classification certainty
+        //A map which keys class_name -> classification certainty
         std::unordered_map<std::string, double> classification; 
 
+        /**
+         * @brief an overload of the less than operator to provide `std::sort` with an operation to sort based
+         * on the Z-order value
+         */
         bool operator<(const InputInference& other) const {
             return z_order < other.z_order;
         }
     };
 
-    //A struct which holds the details of an output message, contains more trimmed down info
+    /**
+     * @brief the data produced as an output from the system, it is intentionally trimmed down to 
+     * reduce the data overhead when outputting fusions
+     */
     struct OutputInference {
+        //The global space center of the inference
         Vec3D center;
+
+        //The dimensions of the inference in meters
         Vec3D dim;
+
+        //A map which keys class_name -> classification certainty
         std::unordered_map<std::string, double> classification;
     };
 
+    /**
+     * @brief a struct to hold the PairHash operator, which is used in the class wide confidence
+     * map so that they can employ std::unorderd map, and their O(1) access & insert time
+     */
     struct PairHash {
+        /**
+         * @brief the hashing operator used by the class wide confidence map, employs `std::hash`
+         * across an `std::pair` of `std::strings`
+         */
         std::size_t operator() (const std::pair<std::string, std::string>& p) const {
             std::size_t first_hash = std::hash<std::string>{}(p.first);
             std::size_t second_hash = std::hash<std::string>{}(p.second);
@@ -94,247 +173,91 @@ public:
                                         Interface Functions
 =====================================================================================================*/
 
-    void add_inference(Vec3D&& pos, Vec3D&& dim, std::string&& mod_name, std::unordered_map<std::string, double>&& classification) {
-        inferences.push_back(InputInference{
-            std::move(pos),
-            Vec3D{0, 0, 0},
-            0,
-            std::move(dim),
-            std::move(mod_name),
-            std::move(classification)
-        });
-    }
+    /**
+     * @brief reserves the internal inference buffer, can probably increase the speed of performing fusions by 
+     * pre-allocating outright the number of items in use
+     * @param count is the number of elements to reserve
+     * @note this function is not strictly necessary for functionality, but will increase overall performance
+     */
+    void reserve_inferences(std::size_t count);
 
-    void add_inference(const Vec3D& pos, const Vec3D& dim, const std::string& mod_name, const std::unordered_map<std::string, double>& classification) {
-        inferences.push_back(InputInference{
-            pos,
-            Vec3D{0, 0, 0},
-            0,
-            dim,
-            mod_name,
-            classification
-        });
-    }
+    /**
+     * @brief inserts an inference into the system
+     * @param pos a position in global space (latitude, longitude, altitude) as a `Vec3D`
+     * @param dim the dimensions of the object in meters as a `Vec3D`
+     * @param mod_name the name of the modality that the inference is coming from
+     * @param classification a map of classes -> confidences
+     * @note this is the R-Value version of this function, and will `std::move` values
+     */
+    void add_inference(Vec3D&& pos, Vec3D&& dim, std::string&& mod_name, std::unordered_map<std::string, double>&& classification);
 
-    void fuse() {
-        //Set up the input size value
-        input_size = inferences.size();
+    /**
+     * @brief inserts an inference into the system
+     * @param pos a position in global space (latitude, longitude, altitude) as a `Vec3D`
+     * @param dim the dimensions of the object in meters as a `Vec3D`
+     * @param mod_name the name of the modality that the inference is coming from
+     * @param classification a map of classes -> confidences
+     * @note this is the L-Value version of this function, and will NOT `std::move` values
+     */
+    void add_inference(const Vec3D& pos, const Vec3D& dim, const std::string& mod_name, const std::unordered_map<std::string, double>& classification);
 
-        //Sort infrences along their Z-order curve
-        order_inferences();
+    /**
+     * @brief invokes the internal functions used for fusing, will take all current settings, all pushed inferneces, the origin they were
+     * pushed with, etc and will populate the output vector, which can be fetched with `get_output()`
+     */
+    void fuse();
 
-        identify_collisions();
+    /**
+     * @brief assigns the internal confidence map that will tie an `std::pair` of {modality, class} to a weight that is applied when fusing
+     * @param map the map, this is best constructed in place using initilizer list syntax for brevity and clarity
+     */
+    void assign_confidence_map(std::unordered_map<std::pair<std::string, std::string>, double, PairHash>&& map);
 
-        form_clusters();
-
-        merge_and_fuse();
-    }
-
-    void assign_confidence_map(std::unordered_map<std::pair<std::string, std::string>, double, PairHash>&& map) {
-        confidence_map = std::move(map);
-    }
-
-    std::queue<OutputInference>& get_output() {
-        return output.storage_ref();
-    }
+    /**
+     * @brief gets a reference to the output vector, this view should be treated as read only, but is not const for debugging
+     * @note this will only ever be populated if infrences are added with `add_inference()` and `fuse()` is called on them
+     */
+    std::vector<OutputInference>& get_output();
 
 /*=====================================================================================================
                                        Testing and Logging Functions
 =====================================================================================================*/
-
     /**
-     * @brief logs out the contents of the Z-buffer
+     * @brief a debug function that can drop the current state of the infrence buffer to the console in a formatted manner,
+     * in case you are tweaking internals, this should NOT be a part of any external API, but is public so that you can use
+     * it with C++ debugging
      */
-    void debug_buff() {
-        for (const auto& ptr : inferences) {
-            std::cout << "Z Order: " << ptr.z_order;
-            const auto& class_labels = ptr.classification;
-            for (const auto& pair : class_labels) {
-                std::cout << " Class: " << pair.first << " Confidence: " << pair.second << std::endl; 
-            }
-        }
-    }
+    void debug_buff();
 
 private:
 /*=====================================================================================================
                                  Main Internal Fusion Functions
 =====================================================================================================*/
 
-    void order_inferences() {
-        //Have the threadpool convert the coords to Z-order, and to local
-        TSVector<std::size_t> cull_indices;
-        pool.queue_and_map_task(
-            inferences,
-            pool.get_max_threads() + 1,
-            [&](InputInference& inf, std::size_t indx) {
-                inf.local_center = geo_to_local(ref_origin, inf.center);
-                auto z_coord_opt = local_to_z_order(inf.local_center, ref_origin, bounding_volume, bit_depth);
-                if (z_coord_opt.has_value()) {
-                    inf.z_order = z_coord_opt.value();
-                } else {
-                    cull_indices.push_back(indx);
-                }
-            }
-        );
+    /**
+     * @brief sorts all infrences added into the system along a Z-order curve, trimming out any items that do not fit
+     * within the systems designated bounding volume. This will populate the Z-order value, and the local_center value
+     * of the inferences, as well as resize the `inferences` vector
+     */
+    void order_inferences();
 
-        //Now we know the number of elements to cull, perform a swap and pop
-        //This is a O(n log(k)) operation
-        if (cull_indices.size() > 0) {
-            auto& indices = cull_indices.storage_ref();
-            std::sort(std::execution::par_unseq, indices.begin(), indices.end(), std::greater<size_t>());
-            for (size_t indx : indices) {
-                if (indx < indices.size()) {
-                    inferences[indx] = std::move(inferences.back());
-                    inferences.pop_back();
-                }
-            }
-        }
+    /**
+     * @brief applys `is_intersecting()` to a sorted subsection of the inferences to identify clusters that intersect.
+     * This adds merge requests into `merges` so that they can be joined into a single root
+     */
+    void identify_collisions();
 
-        //Update total count
-        input_size = inferences.size();
+    /**
+     * @brief the only serial stage of the pipeline, which takes in all the merge-requests and joins them together
+     * so that all objects that collide will share the same root, this is highly efficient thanks to path compression
+     * so the serial aspect should not be a slow down
+     */
+    void form_clusters();
 
-        //Now that infrences have z codes attached, lets sort them by their Z_order
-        std::sort(std::execution::par_unseq, inferences.begin(), inferences.end());
-    }
-
-    void identify_collisions() {
-        //If there are no infrences in existence, dont do anything
-        if (input_size == 0) {
-            return;
-        }
-
-        //Step 1
-        //Loop over the neighborhood, getting intersections, and creating merges if boxes intersect
-        pool.queue_and_map_task(
-            inferences,
-            pool.get_max_threads() + 1,
-            [&](InputInference& inf, std::size_t inf_indx) {
-
-                //Pick a conceivably close distance where we can stop looking for neighbors
-                //TODO techniqucally we could instead of picking distances create a Z-order code for this but thats for later
-                const double max_range = 2 * std::max({inf.dim.x, inf.dim.y, inf.dim.z});
-
-                //Pick a number of misses before we abandon the search
-                //TODO this can be something we can set elsewhere
-                const std::size_t max_misses = 25;
-                std::size_t missed_count = 0;
-
-                //Loop over the other infrences and perform intersection checks
-                for (std::size_t inf_iter = inf_indx + 1; inf_iter < input_size; inf_iter++) {
-                    //Get the item we are checking
-                    const auto& check = inferences[inf_iter];
-
-                    //Check to see if we have reached an object that is outside spatial bounds
-                    if (distance_between(inf.local_center, check.local_center) > max_range) {
-                        missed_count++;
-                        if (missed_count > max_misses) {
-                            break;
-                        }
-                        continue;
-                    } else {
-                        missed_count = 0;
-                    }
-                    
-                    //Otherwise we can check to see if they are intersecting, if they are we mark it as mergable
-                    if (is_intersecting(inf, check)) {
-                        merges.push_back({inf_indx, inf_iter});
-                    }
-                }
-            }
-        );
-    }
-
-    void form_clusters() {
-        //Step 2
-        //Process all the merge requests, starting with everyone is their own parent
-        parents.resize(inferences.size());
-        std::iota(parents.begin(), parents.end(), 0);
-        auto& merge_storage_ref = merges.storage_ref();
-        for (const auto& pair : merge_storage_ref) {
-            set_unite(pair.first, pair.second);
-        }
-
-        //Step 3
-        //Unite all the merges
-        for (std::size_t i = 0; i < input_size; i++) {
-            std::size_t root = union_find(i);
-            clusters[root].push_back(i);
-        }
-    }
-
-    void merge_and_fuse() {
-        //Step 4
-        //For each cluster, create the fusion, remember that the indicies received are into the Z_buffer
-        /**
-         * "Weighted Average: it's found by multiplying each value by its weight, summing those products, and then dividing by the total sum of the weights"
-         */
-        pool.queue_and_map_task(
-            clusters,
-            pool.get_max_threads() + 1,
-            [&](std::pair<const std::size_t, std::vector<std::size_t>>& cluster) {
-                //Now we can create each cluster as an average of these points
-                Vec3D average_center {0.0, 0.0, 0.0};
-                Vec3D average_dim {0.0, 0.0, 0.0};
-
-                //To average the classification, we need to keep track of the total confidences and how many items were assigned to it
-                //This map keys classification -> {sum of confidences, sum of weights}
-                std::unordered_map<std::string, std::pair<double, double>> classification_tracker {};
-                for (std::size_t indx : cluster.second) {
-                    //Add to the average
-                    average_center = average_center + inferences[indx].center;
-                    average_dim = average_dim + inferences[indx].dim;
-
-                    //Get the classifications and add them to the list
-                    auto& new_classifs = inferences[indx].classification;
-                    auto& mod_name = inferences[indx].modality;
-                    for (const auto& pair : new_classifs) {
-                        //For each classification it could be, we must get its name and score
-                        auto& class_name = pair.first;
-                        double class_score = pair.second;
-
-                        //To get its associated weight in our weight map, we create the key
-                        //TODO if the weight is not defined for a class it defaults to one, this could be customizable
-                        double weight = 1;
-                        auto weight_iter = confidence_map.find({mod_name, class_name});
-                        if (weight_iter != confidence_map.end()) {
-                            weight = weight_iter->second;
-                        }
-
-                        //Store the weighted average building blocks in the classification tracker
-                        classification_tracker[class_name].first += (class_score * weight);
-                        classification_tracker[class_name].second += weight;
-                    }
-
-                }
-
-                //Normalize the center and dimensions
-                const double cluster_size = cluster.second.size();
-                average_center = average_center / cluster_size;
-                average_dim = average_dim / cluster_size;
-
-                //Transform the classifications into a weighted average
-                std::unordered_map<std::string, double> classifications {};
-                for (const auto& [class_name, weight_set] : classification_tracker) {
-
-                    //Check to prevent a divide by zero error
-                    if (weight_set.second > 0) {
-                        classifications[class_name] = weight_set.first / weight_set.second;
-                    } else {
-                        //If the total weights equal zero its zero
-                        classifications[class_name] = 0;
-                    }
-                }
-                
-                //Finally, push the inference to the output queue
-                output.push(OutputInference{
-                    average_center,
-                    average_dim,
-                    std::move(classifications)
-                });
-
-            }
-        );
-    }
+    /**
+     * @brief takes in the clusters and computes the weighted averages, populating the `output` vector
+     */
+    void merge_boxes();
 
 /*=====================================================================================================
                                  Utility Functions and Objects
@@ -342,43 +265,27 @@ private:
 
     /**
      * @brief an implementation of bounding box collision under the seperating axis theorem
+     * @param a an InputInference that you want to check for bounding
+     * @param b another InputInference that you want to check for bounding
+     * @return a `bool`, `true` if `a` and `b` collide, `false`, otherwise
      * @note https://en.wikipedia.org/wiki/Hyperplane_separation_theorem
      * @todo need to add a grace boundary for small objects that may not get joined as expected
      */
-    bool is_intersecting(const InputInference& a, const InputInference& b) {
-        if (std::abs(a.local_center.x - b.local_center.x) * 2 > (a.dim.x + b.dim.x)) {
-            return false;
-        }
-
-        if (std::abs(a.local_center.y - b.local_center.y) * 2 > (a.dim.y + b.dim.y)) {
-            return false;
-        }
-
-        if (std::abs(a.local_center.z - b.local_center.z) * 2 > (a.dim.z + b.dim.z)) {
-            return false;
-        }
-
-        return true;
-    }
-
-    std::size_t union_find(std::size_t indx) {
-        if (parents[indx] == indx) {
-            return indx;
-        } else {
-            return parents[indx] = union_find(parents[indx]);
-        }
-    }
+    bool is_intersecting(const InputInference& a, const InputInference& b);
 
     /**
-     * @brief merges two sets
+     * @brief an implementation of union-find using `is_intersecting` as our predicate
+     * @param indx is the index you want to find the parent / root of
      */
-    void set_unite(std::size_t i, std::size_t j) {
-        std::size_t i_root = union_find(i);
-        std::size_t j_root = union_find(j);
-        if (i_root != j_root) {
-            parents[i_root] = j_root;
-        }
-    }
+    std::size_t union_find(std::size_t indx);
+
+    /**
+     * @brief given two indices, merges them so that they have the same root. This is used to
+     * process all the merge requests created by `identify_collisions()`
+     * @param i an index into `inferences` for an object that should set-join with `j`
+     * @param j an index into `inferences` for an object that should set-join with `i`
+     */
+    void set_unite(std::size_t i, std::size_t j);
 
 /*=====================================================================================================
                                     General Internal Resources
@@ -410,7 +317,7 @@ private:
     std::vector<InputInference> inferences {};
 
     //A Threadsafe queue that holds the results of fusion
-    TSQueue<OutputInference> output {};
+    TSVector<OutputInference> output {};
 
 /*=====================================================================================================
                                 Disjoint Set Data and Structures

@@ -130,8 +130,8 @@ int main(int argc, char* argv[]) {
 
     auto& output_q = fuser.get_output();
     while (output_q.size() != 0) {
-        auto elem = output_q.front();
-        output_q.pop();
+        auto elem = output_q.back();
+        output_q.pop_back();
         std::cout << "Item centered at: " << elem.center.to_string() << std::endl;
         std::cout << "Item Dim: " << elem.dim.to_string() << std::endl;;
         std::cout << "Item Class List: " << std::endl;
