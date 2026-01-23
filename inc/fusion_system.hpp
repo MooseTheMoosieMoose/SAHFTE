@@ -1,15 +1,16 @@
 #pragma once
 
-#include <map>
+#include <unordered_map>
 #include <string>
 #include <tuple>
 #include <cstdint>
-    #include <iostream>
-    #include <syncstream>
 #include <cmath>
 #include <execution>
 #include <algorithm>
 #include <numeric>
+
+    #include <iostream>
+    //#include <syncstream>
 
 #include "common.hpp"
 #include "mtx_ds.hpp"
@@ -67,7 +68,7 @@ public:
         std::string modality;
 
         //A map which keys mod_name -> classification certainty
-        std::map<std::string, double> classification; 
+        std::unordered_map<std::string, double> classification; 
 
         bool operator<(const InputInference& other) const {
             return z_order < other.z_order;
@@ -78,14 +79,22 @@ public:
     struct OutputInference {
         Vec3D center;
         Vec3D dim;
-        std::map<std::string, double> classification;
+        std::unordered_map<std::string, double> classification;
+    };
+
+    struct PairHash {
+        std::size_t operator() (const std::pair<std::string, std::string>& p) const {
+            std::size_t first_hash = std::hash<std::string>{}(p.first);
+            std::size_t second_hash = std::hash<std::string>{}(p.second);
+            return first_hash ^ (second_hash << 1);
+        }
     };
 
 /*=====================================================================================================
                                         Interface Functions
 =====================================================================================================*/
 
-    void add_inference(Vec3D&& pos, Vec3D&& dim, std::string&& mod_name, std::map<std::string, double>&& classification) {
+    void add_inference(Vec3D&& pos, Vec3D&& dim, std::string&& mod_name, std::unordered_map<std::string, double>&& classification) {
         inferences.push_back(InputInference{
             std::move(pos),
             Vec3D{0, 0, 0},
@@ -96,7 +105,7 @@ public:
         });
     }
 
-    void add_inference(const Vec3D& pos, const Vec3D& dim, const std::string& mod_name, const std::map<std::string, double>& classification) {
+    void add_inference(const Vec3D& pos, const Vec3D& dim, const std::string& mod_name, const std::unordered_map<std::string, double>& classification) {
         inferences.push_back(InputInference{
             pos,
             Vec3D{0, 0, 0},
@@ -113,19 +122,15 @@ public:
 
         //Sort infrences along their Z-order curve
         order_inferences();
-        std::cout << "Inferences Ordered" << std::endl;
 
         identify_collisions();
-        std::cout << "Collisions Identified" << std::endl;
 
         form_clusters();
-        std::cout << "Clusters Formed" << std::endl;
 
         merge_and_fuse();
-        std::cout << "Merge Complete" << std::endl;
     }
 
-    void assign_confidence_map(std::map<std::pair<std::string, std::string>, double>&& map) {
+    void assign_confidence_map(std::unordered_map<std::pair<std::string, std::string>, double, PairHash>&& map) {
         confidence_map = std::move(map);
     }
 
@@ -167,20 +172,16 @@ private:
                 if (z_coord_opt.has_value()) {
                     inf.z_order = z_coord_opt.value();
                 } else {
-                    std::osyncstream(std::cout) << "Local position: " << inf.local_center.to_string() << " was culled! "
-                    "Distance to origin: " << distance_between(inf.local_center, ref_origin) << std::endl;
                     cull_indices.push_back(indx);
                 }
             }
         );
 
-        std::cout << "Infrences Count: " << input_size << std::endl;
-
         //Now we know the number of elements to cull, perform a swap and pop
         //This is a O(n log(k)) operation
         if (cull_indices.size() > 0) {
             auto& indices = cull_indices.storage_ref();
-            std::sort(indices.begin(), indices.end(), std::greater<size_t>());
+            std::sort(std::execution::par_unseq, indices.begin(), indices.end(), std::greater<size_t>());
             for (size_t indx : indices) {
                 if (indx < indices.size()) {
                     inferences[indx] = std::move(inferences.back());
@@ -194,8 +195,6 @@ private:
 
         //Now that infrences have z codes attached, lets sort them by their Z_order
         std::sort(std::execution::par_unseq, inferences.begin(), inferences.end());
-
-        std::cout << "Infrence Count: " << input_size << std::endl;
     }
 
     void identify_collisions() {
@@ -261,9 +260,6 @@ private:
             std::size_t root = union_find(i);
             clusters[root].push_back(i);
         }
-
-        //TEMP
-        std::cout << "Clusters count: " << clusters.size() << std::endl;
     }
 
     void merge_and_fuse() {
@@ -282,7 +278,7 @@ private:
 
                 //To average the classification, we need to keep track of the total confidences and how many items were assigned to it
                 //This map keys classification -> {sum of confidences, sum of weights}
-                std::map<std::string, std::pair<double, double>> classification_tracker {};
+                std::unordered_map<std::string, std::pair<double, double>> classification_tracker {};
                 for (std::size_t indx : cluster.second) {
                     //Add to the average
                     average_center = average_center + inferences[indx].center;
@@ -317,7 +313,7 @@ private:
                 average_dim = average_dim / cluster_size;
 
                 //Transform the classifications into a weighted average
-                std::map<std::string, double> classifications {};
+                std::unordered_map<std::string, double> classifications {};
                 for (const auto& [class_name, weight_set] : classification_tracker) {
 
                     //Check to prevent a divide by zero error
@@ -341,7 +337,7 @@ private:
     }
 
 /*=====================================================================================================
-                                         Utility Functions
+                                 Utility Functions and Objects
 =====================================================================================================*/
 
     /**
@@ -401,7 +397,7 @@ private:
     Vec3D ref_origin {};
 
     //A map which keys {modality, class} -> confidence for weighted averaging
-    std::map<std::pair<std::string, std::string>, double> confidence_map {};
+    std::unordered_map<std::pair<std::string, std::string>, double, PairHash> confidence_map {};
 
     //The total size of the input, a useful constant to have
     std::size_t input_size;
@@ -427,7 +423,7 @@ private:
     TSVector<std::pair<std::size_t, std::size_t>> merges;
 
     //Create a map which keys roots to the children that are within it, these roots form the clusters
-    std::map<std::size_t, std::vector<std::size_t>> clusters {};
+    std::unordered_map<std::size_t, std::vector<std::size_t>> clusters {};
 
 }; //End definition for Fuser Class
 

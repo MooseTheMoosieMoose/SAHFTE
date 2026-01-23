@@ -90,7 +90,7 @@ int main(int argc, char* argv[]) {
             };
 
             std::string classification = det["class"];
-            std::map<std::string, double> classification_map = {{classification, 1}};
+            std::unordered_map<std::string, double> classification_map = {{classification, 1}};
 
             fuser.add_inference(new_pos, new_dim, mod_name, std::move(classification_map));
         }

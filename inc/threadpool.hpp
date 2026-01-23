@@ -123,12 +123,12 @@ public:
     /**
      * @brief given some container that supports `begin()`, `end()`, map some task across the elements inside `container`,
      * split as `jobs` tasks. Will call `callable` with (T item) as the first argument
-     * @note necessarily blocking to prevent pointer invalidation
+     * @note necessarily blocking to prevent pointer invalidations
      * @note this specialization is for bi-directional iterators, such as std::map. Necessarily then, callable should NOT
      * expect an indx, as they are meaningless in this context
      */
     template <typename Container, typename Func, typename... Args>
-    requires std::ranges::bidirectional_range<Container>
+    requires std::ranges::forward_range<Container>
     void queue_and_map_task(Container& container, std::size_t jobs, Func&& callable, Args&&... args) {
         //Get the number of items, clip them agains the number of jobs if necessary
         const std::size_t element_count = container.size();
