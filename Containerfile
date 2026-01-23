@@ -15,10 +15,15 @@ RUN apt-get update && apt-get install -y \
     g++ \
     cmake \
     ninja-build \
-    git
+    git \
+    curl
 
-#Using Pip get Pandas, Numpy, plotly and Jupyter
-RUN pip install jupyter pandas numpy plotly
+#Using Pip get Pandas, Numpy, plotly and Jupyter, and pybind11
+RUN pip install jupyter pandas numpy plotly pybind11
+
+#Fetch a copy of Nlohmann JSON for the CPP frontend
+RUN mkdir -p /usr/local/include/nlohmann && \
+    curl -o /usr/local/include/nlohmann/json.hpp https://raw.githubusercontent.com/nlohmann/json/refs/heads/develop/single_include/nlohmann/json.hpp
 
 #Launch with bash as our shell
 CMD ["/bin/bash"]

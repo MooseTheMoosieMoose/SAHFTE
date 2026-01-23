@@ -8,7 +8,7 @@
 #include <chrono> //Time Profiling
 
 //External Library Includes
-#include <json.hpp>
+#include <nlohmann/json.hpp>
 
 
 //Internal Library Includes
