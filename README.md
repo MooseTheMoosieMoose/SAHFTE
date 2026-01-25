@@ -49,3 +49,26 @@ Git is either mad about permissions or the crlf / lf discrepencies between a Win
 `git config core.filemode false`
 
 In the git tab on the left, refresh and it should be fixed
+
+## Project Structure
+At the root of the project is several files and folders for different things (sorted by default order in VSCode) these are:
+
+- **Folders**
+    - `.devcontainer` the VSCode integration file that kicks off container entry
+    - `build` this folder is empty at first, the build system will populate it with build artifacts
+    - `cpp_fe` holds the files for the C++ test front end
+    - `docs` holds documentation, images, etc
+    - `lib` holds the core of the actual project, the contents of which are built into a static library that is used by other parts of the project
+    - `pybind` holds the files used to generate Python bindings
+    - `test_data` is another empty folder that is populated using the tools and the various front ends
+    - `tools` holds useful tools for working with this project
+- **Files**
+- `.gitignore` is self explanitory
+- `build.sh` is the build script for building the project
+- `CMakeLists.txt` is the top level orchestrator of the build system
+- `Containerfile` is the container description used to create an environment
+- `docker-compose.yml` is the compose file invoked by `.devcontainer` to automagically plop you in the container
+- `README.md` the file you are reading right now :)
+
+## Building
+From the root of the project

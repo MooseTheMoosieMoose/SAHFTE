@@ -2,16 +2,6 @@
 # CMakeLists for project wide orchestration of builds
 #
 
-
-
-# file(GLOB_RECURSE PROJECT_SOURCES "source/*.cpp")
-
-# add_executable(sahfte ${PROJECT_SOURCES})
-
-# target_include_directories(sahfte PRIVATE inc lib)
-
-# target_link_libraries(sahfte PRIVATE nlohmann_json::nlohmann_json)
-
 #Enforce version, declare project
 cmake_minimum_required(VERSION 3.25)
 project(sahfte_project VERSION 1.0 LANGUAGES CXX)
@@ -27,5 +17,11 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 #Build the library first
 add_subdirectory(lib)
 
-#Then the CPP test front end
-add_subdirectory(cpp_fe)
+#Test to see what we should be building
+if(DEFINED ENV{PY_BINDS} AND NOT "$ENV{PY_BINDS}" STREQUAL "")
+    add_subdirectory(pybind)
+endif()
+
+if(DEFINED ENV{CPP_FE} AND NOT "$ENV{CPP_FE}" STREQUAL "")
+    add_subdirectory(cpp_fe)
+endif()
