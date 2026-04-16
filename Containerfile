@@ -16,10 +16,11 @@ RUN apt-get update && apt-get install -y \
     cmake \
     ninja-build \
     git \
-    curl
+    curl \
+    build-essential python3-dev
 
 #Using Pip get Pandas, Numpy, plotly and Jupyter, and pybind11
-RUN pip install jupyter pandas numpy plotly pybind11
+RUN pip install jupyter pandas numpy plotly scikit-build-core pybind11[global] pybind11-stubgen
 
 #Fetch a copy of Nlohmann JSON for the CPP frontend
 RUN mkdir -p /usr/local/include/nlohmann && \

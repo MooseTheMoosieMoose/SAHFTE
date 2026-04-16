@@ -17,10 +17,13 @@
 #include <execution>          //Execution policies so that the compiler will try to vectorize code if possible
 #include <algorithm>          //The best header in the STL, mainly used for `std::sort`
 #include <numeric>            //Gives us access to the iota initilzer used in union-find
+#include <exception>          //An exception to wrap the gnarlier bits and bobs
+#include <cmath>              //std::fmod
+#include <numbers>            //the blessed dessert number
 
 #include "fusion_system.hpp"  //Headers for this object
 
-namespace FusionSystem {
+namespace FusionSystem { //begin namespace FusionSystem
 
 /*=====================================================================================================
                                         Interface Functions
@@ -31,58 +34,174 @@ void Fuser::reserve_inferences(std::size_t count) {
     inferences.reserve(count);
 }
 
-void Fuser::add_inference(Vec3D&& pos, Vec3D&& dim, std::string&& mod_name, std::unordered_map<std::string, double>&& classification) {
-    //Simply push back a new InputInference with these details, defaulting to 0 (basically null) for fields that we fill in later
-    inferences.push_back(InputInference{
-        std::move(pos),
-        Vec3D{0, 0, 0},
-        0,
-        std::move(dim),
-        std::move(mod_name),
-        std::move(classification)
-    });
+void Fuser::add_inference(
+    Vec3D&& pos, 
+    Vec3D&& dim, 
+    double rotation, 
+    std::string&& mod_name, 
+    std::string&& class_name, 
+    double confidence,
+    bool global_position
+) {
+    //Switch based on if the position is given in global or local coordinates,
+    //Populating the missing coordinate system along the way
+    if (global_position) {
+        Vec3D local_pos = geo_to_local(ref_origin, pos);
+        inferences.push_back(ObjectDetection{
+            .center = std::move(pos),
+            .local_center = local_pos,
+            .z_order = 0,
+            .dim = dim,
+            .rotation = rotation,
+            .modality = mod_name,
+            .class_name = class_name,
+            .det_confidence = confidence
+        });
+    } else {
+        Vec3D global_pos = local_to_geo(ref_origin, pos);
+        inferences.push_back(ObjectDetection{
+            .center = global_pos,
+            .local_center = std::move(pos),
+            .z_order = 0,
+            .dim = dim,
+            .rotation = rotation,
+            .modality = mod_name,
+            .class_name = class_name,
+            .det_confidence = confidence
+        });
+    }
 }
 
-void Fuser::add_inference(const Vec3D& pos, const Vec3D& dim, const std::string& mod_name, const std::unordered_map<std::string, double>& classification) {
-    //Simply push back a new InputInference with these details, defaulting to 0 (basically null) for fields that we fill in later
-    inferences.push_back(InputInference{
-        pos,
-        Vec3D{0, 0, 0},
-        0,
-        dim,
-        mod_name,
-        classification
-    });
+void Fuser::add_inference(
+        Vec3D& pos, 
+        Vec3D& dim, 
+        double rotation, 
+        std::string& mod_name, 
+        std::string& class_name, 
+        double confidence,
+        bool global_position
+) {
+    //Switch based on if the position is given in global or local coordinates,
+    //Populating the missing coordinate system along the way
+    if (global_position) {
+        Vec3D local_pos = geo_to_local(ref_origin, pos);
+        inferences.push_back(ObjectDetection{
+            .center = pos,
+            .local_center = local_pos,
+            .z_order = 0,
+            .dim = dim,
+            .rotation = rotation,
+            .modality = mod_name,
+            .class_name = class_name,
+            .det_confidence = confidence
+        });
+    } else {
+        Vec3D global_pos = local_to_geo(ref_origin, pos);
+        inferences.push_back(ObjectDetection{
+            .center = global_pos,
+            .local_center = pos,
+            .z_order = 0,
+            .dim = dim,
+            .rotation = rotation,
+            .modality = mod_name,
+            .class_name = class_name,
+            .det_confidence = confidence
+        });
+    }
 }
 
 void Fuser::fuse() {
-    //Set up the input size value
-    input_size = inferences.size();
 
-    //Sort infrences along their Z-order curve
-    order_inferences();
+    //Set our good flag to all good
+    good_flag = true;
 
-    //Identify merge pairs
-    identify_collisions();
+    //Wrap our subcalls in a try-catch
+    try {
+        //Set up the input size value
+        input_size = inferences.size();
 
-    //Blend merge pairs into clusters
-    form_clusters();
+        //Sort infrences along their Z-order curve
+        order_inferences();
 
-    //Take clusters and produce final fused outputs
-    merge_boxes();
+        //error_buffer = std::format("{} - After Ordering inferences, input size is: {}", error_buffer, input_size);
+
+        //Identify merge pairs
+        identify_collisions();
+
+        //error_buffer = std::format("{} - After searching for merges, merge count is: {}", error_buffer, merges.size());
+
+        //Blend merge pairs into clusters
+        form_clusters();
+
+        //error_buffer = std::format("{} - Cluster count after forming clusters is: {}", error_buffer, clusters.size());
+
+        //Take clusters and produce final fused outputs
+        merge_boxes();
+
+        //error_buffer = std::format("{} - After fusing output size is: {}", error_buffer, output.size());
+
+    } catch (const std::exception& e) {
+        good_flag = false;
+        error_buffer = e.what();
+    }
+
 }
 
-void Fuser::assign_confidence_map(std::unordered_map<std::pair<std::string, std::string>, double, PairHash>&& map) {
-    confidence_map = std::move(map);
+void Fuser::empty_buffers() {
+    //Calling clear on these invokes the destructors for all of them without
+    //changing the underlying allocation
+    inferences.clear();
+    output.clear();
 }
 
-std::vector<Fuser::OutputInference>& Fuser::get_output() {
+void Fuser::assign_class_confidence_map(
+    std::unordered_map<std::pair<std::string, std::string>, double, PairHash>&& map,
+    double default_val
+) {
+    class_confidence_map = std::move(map);
+    class_conf_default = default_val;
+}
+
+void Fuser::assign_modality_pos_confidence_map(
+    std::unordered_map<std::string, double>&& map,
+    double default_val
+) {
+    position_confidence_map = std::move(map);
+    pos_conf_default = default_val;
+}
+
+void Fuser::assign_modality_dim_confidence_map(
+    std::unordered_map<std::string, double>&& map,
+    double default_val
+) {
+    dimension_confidence_map = std::move(map);
+    dim_conf_default = default_val;
+}
+
+void Fuser::set_reference_origin(Vec3D new_origin) {
+    ref_origin = new_origin;
+}
+
+std::vector<Fuser::ObjectDetection>& Fuser::get_output() {
     return output.storage_ref();
+}
+
+bool Fuser::is_ok() {
+    return good_flag;
+}
+
+std::string Fuser::get_error() {
+    auto lc = std::string(error_buffer);
+    error_buffer.clear();
+    error_buffer.shrink_to_fit();
+    return lc;
 }
 
 /*=====================================================================================================
                                        Testing and Logging Functions
 =====================================================================================================*/
+
+#ifdef DEBUGGING
 
 void Fuser::debug_buff() {
     for (const auto& ptr : inferences) {
@@ -94,6 +213,8 @@ void Fuser::debug_buff() {
     }
 }
 
+#endif
+
 /*=====================================================================================================
                                  Main Internal Fusion Functions
 =====================================================================================================*/
@@ -104,8 +225,12 @@ void Fuser::order_inferences() {
     pool.queue_and_map_task(
         inferences,
         pool.get_max_threads() + 1,
-        [&](InputInference& inf, std::size_t indx) {
-            inf.local_center = geo_to_local(ref_origin, inf.center);
+        [&](ObjectDetection& inf, std::size_t indx) {
+
+            //Note inference coordinate conversion has been moved to the `add_inference` methods
+            //To add flexability between geo and local coords
+            //inf.local_center = geo_to_local(ref_origin, inf.center);
+
             auto z_coord_opt = local_to_z_order(inf.local_center, bounding_volume, bit_depth);
             if (z_coord_opt.has_value()) {
                 inf.z_order = z_coord_opt.value();
@@ -146,7 +271,7 @@ void Fuser::identify_collisions() {
     pool.queue_and_map_task(
         inferences,
         pool.get_max_threads() + 1,
-        [&](InputInference& inf, std::size_t inf_indx) {
+        [&](ObjectDetection& inf, std::size_t inf_indx) {
 
             //Pick a conceivably close distance where we can stop looking for neighbors
             //TODO techniqucally we could instead of picking distances create a Z-order code for this but thats for later
@@ -206,72 +331,107 @@ void Fuser::merge_boxes() {
      * "Weighted Average: it's found by multiplying each value by its weight, summing those products, and then dividing by the total sum of the weights"
      */
     //Pre-allocate our output
-    //TODO add weighted averaging to pos / dim
     output.reserve(clusters.size());
 
+    //Saftey check see if any clusters were even made, if none exist just memcpy the contents of the input
+    //Into the output
+    if (clusters.size() >= inferences.size()) {
+        output.storage_ref().assign(inferences.begin(), inferences.end());
+    }
+
     //For each cluster, create the fusion, remember that the indicies received are into the Z_buffer
+    /**
+     * To turn an average into a weighted average, multiply each 
+     * individual value (or subset average) by its assigned weight, 
+     * sum those products together, and divide by the total sum of the weights
+     */
     pool.queue_and_map_task(
         clusters,
         pool.get_max_threads() + 1,
         [&](std::pair<const std::size_t, std::vector<std::size_t>>& cluster) {
-            //Now we can create each cluster as an average of these points
-            Vec3D average_center {0.0, 0.0, 0.0};
-            Vec3D average_dim {0.0, 0.0, 0.0};
 
-            //To average the classification, we need to keep track of the total confidences and how many items were assigned to it
-            //This map keys classification -> {sum of confidences, sum of weights}
-            std::unordered_map<std::string, std::pair<double, double>> classification_tracker {};
-            for (std::size_t indx : cluster.second) {
-                //Add to the average
-                average_center = average_center + inferences[indx].center;
-                average_dim = average_dim + inferences[indx].dim;
+            //Create variables to store the weighted averages and the weight sums
+            Vec3D average_pos = Vec3D{0.0, 0.0, 0.0};
+            double pos_weight_sum = 0;
 
-                //Get the classifications and add them to the list
-                auto& new_classifs = inferences[indx].classification;
-                auto& mod_name = inferences[indx].modality;
-                for (const auto& pair : new_classifs) {
-                    //For each classification it could be, we must get its name and score
-                    auto& class_name = pair.first;
-                    double class_score = pair.second;
+            Vec3D average_dim = Vec3D{0.0, 0.0, 0.0};
+            double dim_weight_sum = 0;
 
-                    //To get its associated weight in our weight map, we create the key
-                    //TODO if the weight is not defined for a class it defaults to one, this could be customizable
-                    double weight = 1;
-                    auto weight_iter = confidence_map.find({mod_name, class_name});
-                    if (weight_iter != confidence_map.end()) {
-                        weight = weight_iter->second;
-                    }
+            double average_rot = 0;
 
-                    //Store the weighted average building blocks in the classification tracker
-                    classification_tracker[class_name].first += (class_score * weight);
-                    classification_tracker[class_name].second += weight;
-                }
+            std::unordered_map<std::string, double> class_map;
+            double class_weight_sum = 0;
 
-            }
+            std::string mod_string = "fusion";
 
-            //Normalize the center and dimensions
-            const double cluster_size = cluster.second.size();
-            average_center = average_center / cluster_size;
-            average_dim = average_dim / cluster_size;
+            //Sum everything up
+            for (const auto indx : cluster.second) {
+                auto& new_node = inferences[indx];
 
-            //Transform the classifications into a weighted average
-            std::unordered_map<std::string, double> classifications {};
-            for (const auto& [class_name, weight_set] : classification_tracker) {
-
-                //Check to prevent a divide by zero error
-                if (weight_set.second > 0) {
-                    classifications[class_name] = weight_set.first / weight_set.second;
+                //Grab the position and add to its weight sum
+                average_pos = average_pos + new_node.local_center;
+                if (position_confidence_map.contains(new_node.modality)) {
+                    pos_weight_sum += position_confidence_map[new_node.modality];
                 } else {
-                    //If the total weights equal zero its zero
-                    classifications[class_name] = 0;
+                    pos_weight_sum += pos_conf_default;
+                }
+
+                //Grab the dimensions and add to its weights sum
+                average_dim = average_dim + new_node.dim;
+                if (dimension_confidence_map.contains(new_node.modality)) {
+                    dim_weight_sum += dimension_confidence_map[new_node.modality];
+                } else {
+                    dim_weight_sum += dim_conf_default;
+                }
+
+                //Add up the rotation for our running total
+                average_rot += new_node.rotation;
+
+                //Grab the class map and add confidences
+                if (class_map.contains(new_node.class_name)) {
+                    class_map[new_node.class_name] += new_node.det_confidence;
+                } else {
+                    class_map.insert({new_node.class_name, new_node.det_confidence});
+                    mod_string = std::format("{}-{}", mod_string, new_node.class_name);
+                }
+
+                //Add to our class weigt sum
+                if (class_confidence_map.contains({new_node.modality, new_node.class_name})) {
+                    class_weight_sum += class_confidence_map[{new_node.modality, new_node.class_name}];
+                } else {
+                    class_weight_sum += class_conf_default;
                 }
             }
-            
-            //Finally, push the inference to the output queue
-            output.push_back(OutputInference{
-                average_center,
-                average_dim,
-                std::move(classifications)
+
+            //Normalize the simple averages
+            average_pos = average_pos / pos_weight_sum;
+            average_dim = average_dim / dim_weight_sum;
+
+            //Make sure rotation is clamped along [0, 2pi]
+            average_rot /= pos_weight_sum;
+            average_rot = std::fmod(average_rot, 2 * std::numbers::pi);
+
+            //Normalize the class sums and extract the maximum
+            std::string max_key = (*class_map.begin()).first;
+            double max_conf = (*class_map.begin()).second;
+            for (const auto& pair : class_map) {
+                double new_conf = pair.second / class_weight_sum;
+                if (new_conf > max_conf) {
+                    max_conf = new_conf;
+                    max_key = pair.first;
+                }
+            }
+
+            //Create a new value and push
+            output.push_back(ObjectDetection{
+                .center = local_to_geo(ref_origin, average_pos),
+                .local_center = average_pos,
+                .z_order = 0,
+                .dim = average_dim,
+                .rotation = average_rot,
+                .modality = mod_string,
+                .class_name = max_key,
+                .det_confidence = max_conf
             });
 
         }
@@ -282,7 +442,7 @@ void Fuser::merge_boxes() {
                                  Utility Functions and Objects
 =====================================================================================================*/
 
-bool Fuser::is_intersecting(const InputInference& a, const InputInference& b) {
+bool Fuser::is_intersecting(const ObjectDetection& a, const ObjectDetection& b) {
     if (std::abs(a.local_center.x - b.local_center.x) * 2 > (a.dim.x + b.dim.x)) {
         return false;
     }
@@ -314,4 +474,4 @@ void Fuser::set_unite(std::size_t i, std::size_t j) {
     }
 }
 
-} //End namespace fusion system
+} // End namespace fusion system

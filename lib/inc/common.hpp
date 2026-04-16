@@ -28,13 +28,13 @@ namespace FusionSystem {
  * @brief a 3d vector in space used for either a measure of side lengths or of location, translation, scale, etc
  * @note the program is written under the following coordinate system:
  * 
- * -"Right" is in the positive x direction
+ * -"Right" is in the negative y direction
  * 
- * -"Left" is in the negative x direction
+ * -"Left" is in the poisitive y direction
  * 
- * -"Forward" is in the positive y direction
+ * -"Forward" is in the positive x direction
  * 
- * -"Backwards" is in the negative y direction
+ * -"Backwards" is in the negative x direction
  * 
  * -"Up" is in the positive z direction
  * 
@@ -49,7 +49,7 @@ struct Vec3D {
      * @brief an overload of the `+` operator for `Vec3D` which allows you to perform element-wise
      * addition with another `Vec3D`
      */
-    constexpr Vec3D operator+(const Vec3D& other) noexcept {
+    constexpr Vec3D operator+(const Vec3D& other) const noexcept {
         return Vec3D{
             .x = x + other.x,
             .y = y + other.y,
@@ -61,11 +61,11 @@ struct Vec3D {
      * @brief an overload of the `-` operator for `Vec3D` which allows you to perform element-wise
      * subtraction with another `Vec3D`
      */
-    constexpr Vec3D operator-(const Vec3D& other) noexcept {
+    constexpr Vec3D operator-(const Vec3D& other) const noexcept {
         return Vec3D{
-            .x = x + other.x,
-            .y = y + other.y,
-            .z = z + other.z
+            .x = x - other.x,
+            .y = y - other.y,
+            .z = z - other.z
         };
     }
 
@@ -73,7 +73,7 @@ struct Vec3D {
      * @brief an overload of the `/` operator for `Vec3D` which allows you to perform scalar
      * division with the left hand side being a `Vec3D` and the right hand side being a `double`
      */
-    constexpr Vec3D operator/(double scalar) noexcept {
+    constexpr Vec3D operator/(double scalar) const noexcept {
         return Vec3D{
             .x = x / scalar,
             .y = y / scalar,
@@ -85,11 +85,11 @@ struct Vec3D {
      * @brief an overload of the `*` operator for `Vec3D` which allows you to perform scalar
      * multiplication with the left hand side being a `Vec3D` and the right hand side being a `double`
      */
-    constexpr Vec3D operator*(double scalar) noexcept {
+    constexpr Vec3D operator*(double scalar) const noexcept {
         return Vec3D{
-            .x = x / scalar,
-            .y = y / scalar,
-            .z = z / scalar,
+            .x = x * scalar,
+            .y = y * scalar,
+            .z = z * scalar,
         };
     }
 
@@ -113,6 +113,19 @@ struct Vec3D {
  * https://en.wikipedia.org/wiki/Haversine_formula
  */
 Vec3D geo_to_local(const Vec3D& origin, const Vec3D& target);
+
+/**
+ * @brief takes in a position `origin` that marks the geographic center of your frame of 
+ * reference, (lat, long, alt) and a distance from that origin, `target` in meters
+ * and produces the geographic position following thoes distances from the target position
+ * @param origin a `Vec3D` with the geographic position to reference from
+ * @param target a `Vec3D` with the distance in meters from that reference position
+ * @return a `Vec3D` with the geographic (lat, long, alt) equivalent of target
+ * @note this does NOT implement the full haversine formula, but instead works assuming that points
+ * are close enough that we can treat them as being on a flat plane, see here:
+ * https://en.wikipedia.org/wiki/Haversine_formula
+ */
+Vec3D local_to_geo(const Vec3D& origin, const Vec3D& target);
 
 /**
  * @brief takes in a local position and converts it to a position along a Z-order curve in 3d space

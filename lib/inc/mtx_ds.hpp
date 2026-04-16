@@ -179,6 +179,15 @@ public:
         return storage;
     }
 
+    /**
+     * @brief empties the contentes without changing the underlying allocation, useful
+     * for re-using memory
+     */
+    void clear() {
+        std::lock_guard<std::mutex> lock(mtx);
+        storage.clear();
+    }
+
 
 private:
     //The underlying storage component where items are put into

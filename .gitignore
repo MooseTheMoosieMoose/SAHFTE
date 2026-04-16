@@ -2,3 +2,8 @@ test_data/*
 build/*
 .DS_STORE
 .env
+*.so
+dump.txt
+sahfte.egg-info
+*/__pycache__
+sahfte/sahfte.pyi

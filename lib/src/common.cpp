@@ -34,16 +34,39 @@ Vec3D geo_to_local(const Vec3D& origin, const Vec3D& target) {
     const double d_lat = target.x - origin.x;
     const double d_lon = target.y - origin.y;
     const double d_alt = target.z - origin.z;
-    
-    //Using the consts and the diff we can get the y
-    const double y_meters = d_lat * deg_to_rad * earth_radius;
 
     //Becuase latitude lines shrink around the pole we need a cos term to fix them
     const double radius_at_lat = earth_radius * std::cos(origin.x * deg_to_rad);
-    const double x_meters = d_lon * deg_to_rad * radius_at_lat;
+    const double x_meters = d_lat * deg_to_rad * earth_radius;
+
+    //Using the consts and the diff we can get the y
+    const double y_meters = -(d_lon * deg_to_rad * radius_at_lat);
 
     //Return the finished struct, RVO reduces passing burden I hope
     return Vec3D{x_meters, y_meters, d_alt};
+}
+
+Vec3D local_to_geo(const Vec3D& origin, const Vec3D& target) {
+    const double earth_radius = 6378137.0;
+    constexpr double rad_to_deg = 180.0 / std::numbers::pi;
+    constexpr double deg_to_rad = std::numbers::pi / 180.0;
+
+    //Convert the distance traveled into latitude degrees
+    double d_lat = (target.x / earth_radius) * rad_to_deg;
+
+    //Convert the earth's radius at the target latitude
+    double radius_at_lat = earth_radius * std::cos(origin.x * deg_to_rad);
+
+    //Now that we have that radius we can work back to get the longitude
+    double d_lon = (-target.y / radius_at_lat) * rad_to_deg;
+
+    //Now that we have the offsets traveled, we add thoes degrees to our existing
+    //Position to create a new one
+    return Vec3D{
+        .x = origin.x + d_lat,
+        .y = origin.y + d_lon,
+        .z = origin.z + target.z
+    };
 }
 
 std::optional<uint64_t> local_to_z_order(

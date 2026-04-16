@@ -19,9 +19,6 @@
 #include <string>        //For dynamic strings
 #include <cstdint>       //For standard ints (uint32_t, etc)
 
-    #include <iostream>
-    //#include <syncstream> //Uncomment me if you want to add synced output for debugging
-
 #include "common.hpp"     //Common coord conversions and Vec3D
 #include "mtx_ds.hpp"     //Thread safe queues and vectors
 #include "threadpool.hpp" //The threadpool
@@ -32,6 +29,7 @@ namespace FusionSystem {
  * @brief a Fuser takes in a set of inferences, and produces a fused output based on position, size,
  * classifications, and an internal confidence map
  * @note Interacting with this system should have the following steps:
+ * 
  * 1. Construct an instance of the `Fuser` object with a given number of auxillary threads, a bit_depth, a 
  * fusion volume and the current origin
  * 
@@ -39,13 +37,15 @@ namespace FusionSystem {
  * 
  * 3. In a loop perform the following:
  * 
- * 3.a. Ensure your origin is up to date with `assign_origin()`
+ * 3.a. Ensure your origin is up to date with `set_reference_origin()`
  * 
  * 3.b. Add infrences using the `add_inference()` methods
  * 
  * 3.c. Instruct the system to perform a fusion with the `fuse()` method
  * 
  * 3.d. Pop fused outputs using the `get_output()` method
+ * 
+ * 3.e. Flush the input/output buffers with `empty_buffers()`
  */
 class Fuser {
 public:
@@ -72,7 +72,6 @@ public:
     {
         //Set up the pool with threads
         pool.initilize_threads(thread_count);
-        
     }
 
     /**
@@ -109,8 +108,9 @@ public:
     /**
      * @brief A Struct which holds the details of an object detection for input, also stores helpful information that 
      * can be cached and used throughout the fusion process
+     * @todo change layout to optimize alignment
      */
-    struct InputInference {
+    struct ObjectDetection {
         //Global space center
         Vec3D center;
 
@@ -121,36 +121,27 @@ public:
         std::size_t z_order;
 
         //Dimensions in Meters
-        Vec3D dim; 
+        Vec3D dim;
+
+        //Rotation of the detection along its Z-axis
+        double rotation;
 
         //The modality name
         std::string modality;
 
-        //A map which keys class_name -> classification certainty
-        std::unordered_map<std::string, double> classification; 
+        //The Name of the class detection
+        std::string class_name;
+
+        //The detection confidence
+        double det_confidence;
 
         /**
          * @brief an overload of the less than operator to provide `std::sort` with an operation to sort based
          * on the Z-order value
          */
-        bool operator<(const InputInference& other) const {
+        bool operator<(const ObjectDetection& other) const {
             return z_order < other.z_order;
         }
-    };
-
-    /**
-     * @brief the data produced as an output from the system, it is intentionally trimmed down to 
-     * reduce the data overhead when outputting fusions
-     */
-    struct OutputInference {
-        //The global space center of the inference
-        Vec3D center;
-
-        //The dimensions of the inference in meters
-        Vec3D dim;
-
-        //A map which keys class_name -> classification certainty
-        std::unordered_map<std::string, double> classification;
     };
 
     /**
@@ -185,49 +176,124 @@ public:
      * @brief inserts an inference into the system
      * @param pos a position in global space (latitude, longitude, altitude) as a `Vec3D`
      * @param dim the dimensions of the object in meters as a `Vec3D`
+     * @param rotation the rotation of the object around the up/down (Z) axis
      * @param mod_name the name of the modality that the inference is coming from
-     * @param classification a map of classes -> confidences
+     * @param class_name the detected class
+     * @param confidence the confidence in the detected class bounded on [0, 1]
      * @note this is the R-Value version of this function, and will `std::move` values
+     * @note once an inference is staged with this function the only way to remove it is to clear
+     * the entire internal inference buffer via a call to `empty_buffers()`
      */
-    void add_inference(Vec3D&& pos, Vec3D&& dim, std::string&& mod_name, std::unordered_map<std::string, double>&& classification);
+    void add_inference(
+        Vec3D&& pos, 
+        Vec3D&& dim, 
+        double rotation, 
+        std::string&& mod_name, 
+        std::string&& class_name, 
+        double confidence,
+        bool global_position = true
+    );
 
     /**
      * @brief inserts an inference into the system
      * @param pos a position in global space (latitude, longitude, altitude) as a `Vec3D`
      * @param dim the dimensions of the object in meters as a `Vec3D`
+     * @param rotation the rotation of the object around the up/down (Z) axis
      * @param mod_name the name of the modality that the inference is coming from
-     * @param classification a map of classes -> confidences
+     * @param class_name the detected class
+     * @param confidence the confidence in the detected class bounded on [0, 1]
      * @note this is the L-Value version of this function, and will NOT `std::move` values
+     * @note once an inference is staged with this function the only way to remove it is to clear
+     * the entire internal inference buffer via a call to `empty_buffers()`
      */
-    void add_inference(const Vec3D& pos, const Vec3D& dim, const std::string& mod_name, const std::unordered_map<std::string, double>& classification);
+    void add_inference(
+        Vec3D& pos, 
+        Vec3D& dim, 
+        double rotation, 
+        std::string& mod_name, 
+        std::string& class_name, 
+        double confidence,
+        bool global_position = true
+    );
 
     /**
      * @brief invokes the internal functions used for fusing, will take all current settings, all pushed inferneces, the origin they were
      * pushed with, etc and will populate the output vector, which can be fetched with `get_output()`
      */
     void fuse();
-
-    /**
-     * @brief assigns the internal confidence map that will tie an `std::pair` of {modality, class} to a weight that is applied when fusing
-     * @param map the map, this is best constructed in place using initilizer list syntax for brevity and clarity
-     */
-    void assign_confidence_map(std::unordered_map<std::pair<std::string, std::string>, double, PairHash>&& map);
-
+    
     /**
      * @brief gets a reference to the output vector, this view should be treated as read only, but is not const for debugging
      * @note this will only ever be populated if infrences are added with `add_inference()` and `fuse()` is called on them
      */
-    std::vector<OutputInference>& get_output();
+    std::vector<ObjectDetection>& get_output();
+
+    /**
+     * @brief emptys the internal inference input and output buffers. This will NOT free the actual allocations of either of these
+     * buffers, but instead destruct the entire contents of the buffers.
+     * @warning this is destructive, non-reversible and should only be called once the fusion results have been extracted
+     */
+    void empty_buffers();
+
+    /**
+     * @brief assigns the internal confidence map that will tie an `std::pair` of {modality, class} to a weight that is applied when fusing
+     * to bias the final output class of the fuser
+     * @param map the map, this is best constructed in place using initilizer list syntax for brevity and clarity
+     * @param default_val the default value for class confidences that arent in the provided map
+     */
+    void assign_class_confidence_map(std::unordered_map<std::pair<std::string, std::string>, double, PairHash>&& map, double default_val = 1);
+
+    /**
+     * @brief assigns the internal confidence map that ties a modality passed as a string and a weight that is applied when fusing
+     * to bias the position of the fused detections
+     * @param map the map of `{modality, weight}` that biases the fusion
+     * @param default_val the default value for class confidences that arent in the provided map
+     */
+    void assign_modality_pos_confidence_map(std::unordered_map<std::string, double>&& map, double default_val = 1);
+
+    /**
+     * @brief assigns the internal confidence map that ties a modality passed as a string and a weight that is applied when fusing to bias the final
+     * dimensions of any fusion produced
+     * @param map the map of `{modality, weight}` that biases the fusion
+     * @param default_val the default value for class confidences that arent in the provided map
+     */
+    void assign_modality_dim_confidence_map(std::unordered_map<std::string, double>&& map, double default_val = 1);
+
+    /**
+     * @brief assign the current global (lat, long, alt) position that serves as the global reference origin
+     * @param new_origin the new vec3D to position the reference origin at
+     */
+    void set_reference_origin(Vec3D new_origin);
+
+    /**
+     * @brief returns the status of the internal state of the fuser. If false, then something messed up,
+     * consider calling `empty_buffers()` and evaluate the problem with `get_error()`
+     * @returns a bool representing good status (true), or an internal error (false)
+     */
+    bool is_ok();
+
+    /**
+     * @brief returns and empties the error message buffer. This is populated whenever `is_ok()` returns false
+     * @returns an `std::string` representing the error message from `e.what()`
+     */
+    std::string get_error();
 
 /*=====================================================================================================
                                        Testing and Logging Functions
 =====================================================================================================*/
+
+#ifdef DEBUGGING
+
+    #include <iostream>
+    #include <syncstream> //Uncomment me if you want to add synced output for debugging
     /**
      * @brief a debug function that can drop the current state of the infrence buffer to the console in a formatted manner,
      * in case you are tweaking internals, this should NOT be a part of any external API, but is public so that you can use
      * it with C++ debugging
      */
     void debug_buff();
+
+#endif
 
 private:
 /*=====================================================================================================
@@ -265,13 +331,13 @@ private:
 
     /**
      * @brief an implementation of bounding box collision under the seperating axis theorem
-     * @param a an InputInference that you want to check for bounding
-     * @param b another InputInference that you want to check for bounding
+     * @param a an ObjectDetection that you want to check for bounding
+     * @param b another ObjectDetection that you want to check for bounding
      * @return a `bool`, `true` if `a` and `b` collide, `false`, otherwise
      * @note https://en.wikipedia.org/wiki/Hyperplane_separation_theorem
-     * @todo need to add a grace boundary for small objects that may not get joined as expected
+     * @warning THIS DOES NOT HANDLE ROTATION, SMALL ROTATED OBJECTS MIGHT BE MISSED FOR FUSION
      */
-    bool is_intersecting(const InputInference& a, const InputInference& b);
+    bool is_intersecting(const ObjectDetection& a, const ObjectDetection& b);
 
     /**
      * @brief an implementation of union-find using `is_intersecting` as our predicate
@@ -303,8 +369,20 @@ private:
     //The current reference origin
     Vec3D ref_origin {};
 
-    //A map which keys {modality, class} -> confidence for weighted averaging
-    std::unordered_map<std::pair<std::string, std::string>, double, PairHash> confidence_map {};
+    //A map which keys {modality, class} -> confidence for weighted averaging of class
+    std::unordered_map<std::pair<std::string, std::string>, double, PairHash> class_confidence_map {};
+
+    //A map which keys {modality} -> confidence for weighted averaging of pos
+    std::unordered_map<std::string, double> position_confidence_map {};
+
+    //A map which keys {modality} -> confidence for weighted averaging of dimensions
+    std::unordered_map<std::string, double> dimension_confidence_map {};
+
+    //Default values for unmaped keys
+    double class_conf_default = 1;
+    double pos_conf_default = 1;
+    double dim_conf_default = 1;
+
 
     //The total size of the input, a useful constant to have
     std::size_t input_size;
@@ -314,10 +392,16 @@ private:
 =====================================================================================================*/
 
     //The bulk storage where objects are kept
-    std::vector<InputInference> inferences {};
+    std::vector<ObjectDetection> inferences {};
 
     //A Threadsafe queue that holds the results of fusion
-    TSVector<OutputInference> output {};
+    TSVector<ObjectDetection> output {};
+
+    //A flag that is thrown whenever an exception is thrown in the fusion engine, hopefully never
+    bool good_flag = true;
+
+    //A buffer to dump error messages
+    std::string error_buffer {};
 
 /*=====================================================================================================
                                 Disjoint Set Data and Structures

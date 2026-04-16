@@ -3,6 +3,15 @@
 
 SAHFE is a 3D fusion system developed as a part of a senior project
 
+## Python Quick Start
+
+1. Pull down the repo
+2. In the root of the project run `cmake -S . -DBUILD_PYTHON_BINDINGS=ON -B build -G Ninja && cmake --build build`
+3. run `pip install .` in the project root to install to your python path
+
+
+> Note that this will only work for linux distros, dont try this on windows
+
 ## Requirements and Setup
 The development environment of this project is containerized to fascillitate repeatable and long-term development as this project is handed off to other people who have much better things to do than worrying about `gcc` versioning and if `pandas` is accessible in a working Jupyter `python` kernel. These instructions are up to date as of: **01/18/26**, please keep them up to date accordingly!
 
