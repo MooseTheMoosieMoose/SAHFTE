@@ -30,7 +30,7 @@ def main():
     
     for item in fuser.get_output():
         print("\n\n")
-        print(f"Fusion Results:\n\tClass Name: {item.class_name}\n\tConfidence: {item.confidence}\n\tModality String:")
+        print(f"Fusion Results:\n\tClass Name: {item.class_name}\n\tConfidence: {item.confidence}\n\tModality String: {item.modality}")
 
     fuser.empty_buffers()
 

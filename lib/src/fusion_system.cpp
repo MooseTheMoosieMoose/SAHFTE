@@ -392,7 +392,7 @@ void Fuser::merge_boxes() {
                     class_map[new_node.class_name] += new_node.det_confidence;
                 } else {
                     class_map.insert({new_node.class_name, new_node.det_confidence});
-                    mod_string = std::format("{}-{}", mod_string, new_node.class_name);
+                    mod_string = std::format("{}-{}", mod_string, new_node.modality);
                 }
 
                 //Add to our class weigt sum

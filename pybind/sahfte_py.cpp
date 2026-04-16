@@ -87,6 +87,7 @@ PYBIND11_MODULE(sahfte, m) {
             local_center (Vec3D): the center of the detection in local space (meters from GPS ref)
             dimensions (Vec3D): the size of the detection in meters
             rotation (float): the rotation of the object about the Z-axis on [0, 2pi]
+            modality (str): a string with the modality the object detection came from
             class_name (str): the name of the class for the detection
             confidence (float): the confidence of the detection on [0, 1] 
         )doc")
@@ -110,6 +111,10 @@ PYBIND11_MODULE(sahfte, m) {
         .def_readonly(
             "rotation", 
             &Fuser::ObjectDetection::rotation
+        )
+        .def_readonly(
+            "modality",
+            &Fuser::ObjectDetection::modality
         )
         .def_readonly(
             "class_name", 
