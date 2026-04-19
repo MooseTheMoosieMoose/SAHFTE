@@ -15,7 +15,8 @@
 
 #pragma once
 
-#include <string> //Used for the `to_string()` method in Vec3D
+#include <string>   //Used for the `to_string()` method in Vec3D
+#include <optional> // gives us an ergenomic optional type
 
 #ifdef USE_STD_FORMAT
     #include <format>  //Used for the `to_string()` method in Vec3D

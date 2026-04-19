@@ -6,7 +6,8 @@ from sahfte import Fuser, Vec3D, ObjectDetection
 input_sources = ["camera", "radar", "lidar"]
 
 def main():
-    fuser = Fuser(3, 8, Vec3D(100.0, 100.0, 100.0), Vec3D(57.097689595459485, -8.803518178702546, 2192.3872210358936))
+    bounding_volume = Vec3D(100.0, 100.0, 100.0)
+    fuser = Fuser(3, 8, bounding_volume, Vec3D(57.097689595459485, -8.803518178702546, 2192.3872210358936))
     
     #Load all of our input data and shove it into the fuser
     total = 0

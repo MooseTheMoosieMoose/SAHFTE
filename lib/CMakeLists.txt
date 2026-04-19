@@ -9,10 +9,10 @@ add_library(core_lib STATIC
     src/threadpool.cpp
 )
 
-option(USE_STD_FORMAT "Enable use of std::format" ON)
+option(USE_STD_FORMAT "Enable use of std::format" OFF)
 
 if (USE_STD_FORMAT)
-    target_compile_definitions(core_lib PRIVATE USE_STD_FORMAT);
+    target_compile_definitions(core_lib PRIVATE USE_STD_FORMAT)
 endif()
 
 #Make a public interface for the headers of this library
