@@ -1,3 +1,16 @@
+/**                                                      
+ *  ,---.    ,---.  ,--.  ,--.,------.,--------.,------. 
+ * '   .-'  /  O  \ |  '--'  ||  .---''--.  .--'|  .---' 
+ * `.  `-. |  .-.  ||  .--.  ||  `--,    |  |   |  `--,  
+ * .-'    ||  | |  ||  |  |  ||  |`      |  |   |  `---. 
+ * `-----' `--' `--'`--'  `--'`--'       `--'   `------'                                                      
+ * 
+ * SAHFTE (Spatial Algorithmic Hashing Fusion Time-sliced Engine)
+ * @file threadpool.cpp
+ * @author Moose Abou-Harb
+ * @brief this file has the function definitions for the threadpool class
+ * @copyright `26, Lisenced under whatever Paccar Inc.'s requirements are
+ */
 
 #include "threadpool.hpp"
 

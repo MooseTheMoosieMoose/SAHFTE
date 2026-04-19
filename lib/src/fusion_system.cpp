@@ -6,9 +6,9 @@
  * `-----' `--' `--'`--'  `--'`--'       `--'   `------'                                                      
  * 
  * SAHFTE (Spatial Algorithmic Hashing Fusion Time-sliced Engine)
- * @file common.cpp
+ * @file fusion_system.cpp
  * @author Moose Abou-Harb
- * @brief this file  contains the function definitions for the headers deinfed in common.hpp
+ * @brief this file has the function definitions for the classes described in fusion_system.hpp
  * @copyright `26, Lisenced under whatever Paccar Inc.'s requirements are
  */
 
