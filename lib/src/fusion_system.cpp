@@ -21,6 +21,10 @@
 #include <cmath>              //std::fmod
 #include <numbers>            //the blessed dessert number
 
+#ifdef USE_STD_FORMAT
+        #include <format>     //Conditionall use std::format if available
+#endif
+
 #include "fusion_system.hpp"  //Headers for this object
 
 namespace FusionSystem { //begin namespace FusionSystem
@@ -392,7 +396,12 @@ void Fuser::merge_boxes() {
                     class_map[new_node.class_name] += new_node.det_confidence;
                 } else {
                     class_map.insert({new_node.class_name, new_node.det_confidence});
+
+#ifdef USE_STD_FORMAT
                     mod_string = std::format("{}-{}", mod_string, new_node.modality);
+#else
+                    mod_string += new_node.modality.insert(0, 1, '-');
+#endif
                 }
 
                 //Add to our class weigt sum

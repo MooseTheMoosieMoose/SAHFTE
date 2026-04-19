@@ -9,7 +9,7 @@ SAHFE is a 3D fusion system developed as a part of a senior project
 2. In the root of the project run `cmake -S . -DBUILD_PYTHON_BINDINGS=ON -B build -G Ninja && cmake --build build`
 3. run `pip install .` in the project root to install to your python path
 
-
+> Note building with -DUSE_STD_FORMAT=OFF will disable any dependency on `std::format` for older, uncompliant compilers
 > Note that this will only work for linux distros, dont try this on windows
 
 ## Requirements and Setup

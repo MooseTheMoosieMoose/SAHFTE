@@ -16,7 +16,12 @@
 #pragma once
 
 #include <string> //Used for the `to_string()` method in Vec3D
-#include <format> //Used for the `to_string()` method in Vec3D
+
+#ifdef USE_STD_FORMAT
+    #include <format>  //Used for the `to_string()` method in Vec3D
+#else
+    #include <sstream> // Used as a replacement for std::format for non compliant compilers
+#endif
 
 namespace FusionSystem {
 
@@ -94,7 +99,13 @@ struct Vec3D {
     }
 
     inline std::string to_string() {
+#ifdef USE_STD_FORMAT
         return std::format("({}, {}, {})", x, y, z);
+#else
+        std::stringstream s;
+        s << "(" << x << ", " << y << ", " << z << ")";
+        return s.str();
+#endif
     }
 };
 
