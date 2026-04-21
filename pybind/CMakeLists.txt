@@ -17,6 +17,11 @@ set_target_properties(sahfte PROPERTIES
     ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/sahfte"
 )
 
+#Add threading blocks for cross build
+find_package(TBB REQUIRED)
+
+target_link_libraries(sahfte PRIVATE TBB::tbb)
+
 add_custom_command(
     TARGET sahfte POST_BUILD
     COMMAND ${PYTHON_EXECUTABLE} -m pybind11_stubgen sahfte 
