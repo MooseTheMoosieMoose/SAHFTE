@@ -3,6 +3,8 @@ import json
 
 from sahfte import Fuser, Vec3D, ObjectDetection
 
+import uuid
+
 input_sources = ["camera", "radar", "lidar"]
 
 def main():
@@ -19,7 +21,7 @@ def main():
             total += 1
             det_pos = Vec3D(detection["latitude"], detection["longitude"], detection["altitude"])
             det_dim = Vec3D(detection["dimensions"][0], detection["dimensions"][1], detection["dimensions"][2])
-            fuser.add_inference(det_pos, det_dim, 0, new_modality, detection["class"], 0.5)
+            fuser.add_inference(det_pos, det_dim, 0, new_modality, detection["class"], 0.5, str(uuid.uuid4()))
 
     #Fuse!
     print(f"Ready to fuse {total} items...")
@@ -31,7 +33,11 @@ def main():
     
     for item in fuser.get_output():
         print("\n\n")
-        print(f"Fusion Results:\n\tClass Name: {item.class_name}\n\tConfidence: {item.confidence}\n\tModality String: {item.modality}")
+        print(f"Fusion Results:\n\t \
+              Class Name: {item.class_name}\n\t \
+              Confidence: {item.confidence}\n\t \
+              Modality String: {item.modality}\n\t \
+              UUID String: {item.uuid}")
 
     fuser.empty_buffers()
 

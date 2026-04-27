@@ -45,6 +45,7 @@ void Fuser::add_inference(
     std::string&& mod_name, 
     std::string&& class_name, 
     double confidence,
+    std::string&& uuid,
     bool global_position
 ) {
     //Switch based on if the position is given in global or local coordinates,
@@ -53,13 +54,14 @@ void Fuser::add_inference(
         Vec3D local_pos = geo_to_local(ref_origin, pos);
         inferences.push_back(ObjectDetection{
             .center = std::move(pos),
-            .local_center = local_pos,
+            .local_center = local_pos, //I hope NRVO can make this snappy
             .z_order = 0,
             .dim = dim,
             .rotation = rotation,
-            .modality = mod_name,
-            .class_name = class_name,
-            .det_confidence = confidence
+            .modality = std::move(mod_name),
+            .class_name = std::move(class_name),
+            .det_confidence = confidence,
+            .uuid = std::move(uuid)
         });
     } else {
         Vec3D global_pos = local_to_geo(ref_origin, pos);
@@ -69,9 +71,10 @@ void Fuser::add_inference(
             .z_order = 0,
             .dim = dim,
             .rotation = rotation,
-            .modality = mod_name,
-            .class_name = class_name,
-            .det_confidence = confidence
+            .modality = std::move(mod_name),
+            .class_name = std::move(class_name),
+            .det_confidence = confidence,
+            .uuid = std::move(uuid)
         });
     }
 }
@@ -81,8 +84,9 @@ void Fuser::add_inference(
         Vec3D& dim, 
         double rotation, 
         std::string& mod_name, 
-        std::string& class_name, 
+        std::string& class_name,
         double confidence,
+        std::string& uuid,
         bool global_position
 ) {
     //Switch based on if the position is given in global or local coordinates,
@@ -97,7 +101,8 @@ void Fuser::add_inference(
             .rotation = rotation,
             .modality = mod_name,
             .class_name = class_name,
-            .det_confidence = confidence
+            .det_confidence = confidence,
+            .uuid = uuid
         });
     } else {
         Vec3D global_pos = local_to_geo(ref_origin, pos);
@@ -109,7 +114,8 @@ void Fuser::add_inference(
             .rotation = rotation,
             .modality = mod_name,
             .class_name = class_name,
-            .det_confidence = confidence
+            .det_confidence = confidence,
+            .uuid = uuid
         });
     }
 }
@@ -344,16 +350,19 @@ void Fuser::merge_boxes() {
     }
 
     //For each cluster, create the fusion, remember that the indicies received are into the Z_buffer
-    /**
-     * To turn an average into a weighted average, multiply each 
-     * individual value (or subset average) by its assigned weight, 
-     * sum those products together, and divide by the total sum of the weights
-     */
     pool.queue_and_map_task(
         clusters,
         pool.get_max_threads() + 1,
         [&](std::pair<const std::size_t, std::vector<std::size_t>>& cluster) {
+            
+            //See if we can fast track cluster calculations becuase its a 1 item group
+            std::size_t cluster_size = cluster.second.size();
+            if (cluster_size == 1) {
+                output.push_back(inferences[cluster.second[0]]);
+                return;
+            }
 
+            //If fast track fails we have to perform the cluster fusion
             //Create variables to store the weighted averages and the weight sums
             Vec3D average_pos = Vec3D{0.0, 0.0, 0.0};
             double pos_weight_sum = 0;
@@ -368,7 +377,14 @@ void Fuser::merge_boxes() {
 
             std::string mod_string = "fusion";
 
+            //UUIDs are very well behaved, and every unique UUID
+            //is 36 charachters long, so we can prealloc our string
+            //and take into account the : seperator
+            std::string uuid_string = "";
+            uuid_string.reserve((36 * cluster_size) + (cluster_size - 1));
+
             //Sum everything up
+            std::size_t cluster_indx = 0;
             for (const auto indx : cluster.second) {
                 auto& new_node = inferences[indx];
 
@@ -410,6 +426,25 @@ void Fuser::merge_boxes() {
                 } else {
                     class_weight_sum += class_conf_default;
                 }
+
+                //Append the new node UUID to the running UUID string,
+                //If we are at the last one dont add a trailing : sign
+                if (cluster_indx == (cluster_size - 1)) {
+#ifdef USE_STD_FORMAT
+                    uuid_string = std::format("{}{}", uuid_string, new_node.uuid);
+#else
+                    uuid_string += new_node.uuid;
+#endif
+                } else {
+#ifdef USE_STD_FORMAT
+                    uuid_string = std::format("{}{}:", uuid_string, new_node.uuid);
+#else
+                    uuid_string += new_node.uuid.insert(0, 1, ':');
+#endif
+                }
+
+                //Advance counter to keep track of things
+                cluster_indx++;
             }
 
             //Normalize the simple averages
@@ -440,7 +475,8 @@ void Fuser::merge_boxes() {
                 .rotation = average_rot,
                 .modality = mod_string,
                 .class_name = max_key,
-                .det_confidence = max_conf
+                .det_confidence = max_conf,
+                .uuid = uuid_string
             });
 
         }

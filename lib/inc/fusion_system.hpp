@@ -135,6 +135,9 @@ public:
         //The detection confidence
         double det_confidence;
 
+        //The UUID of the detection
+        std::string uuid;
+
         /**
          * @brief an overload of the less than operator to provide `std::sort` with an operation to sort based
          * on the Z-order value
@@ -179,6 +182,7 @@ public:
      * @param rotation the rotation of the object around the up/down (Z) axis
      * @param mod_name the name of the modality that the inference is coming from
      * @param class_name the detected class
+     * @param uuid the UUID of the detection for logging and tracking
      * @param confidence the confidence in the detected class bounded on [0, 1]
      * @note this is the R-Value version of this function, and will `std::move` values
      * @note once an inference is staged with this function the only way to remove it is to clear
@@ -191,6 +195,7 @@ public:
         std::string&& mod_name, 
         std::string&& class_name, 
         double confidence,
+        std::string&& uuid,
         bool global_position = true
     );
 
@@ -201,6 +206,7 @@ public:
      * @param rotation the rotation of the object around the up/down (Z) axis
      * @param mod_name the name of the modality that the inference is coming from
      * @param class_name the detected class
+     * @param uuid the UUID of the detection for logging and tracking
      * @param confidence the confidence in the detected class bounded on [0, 1]
      * @note this is the L-Value version of this function, and will NOT `std::move` values
      * @note once an inference is staged with this function the only way to remove it is to clear
@@ -213,6 +219,7 @@ public:
         std::string& mod_name, 
         std::string& class_name, 
         double confidence,
+        std::string& uuid,
         bool global_position = true
     );
 

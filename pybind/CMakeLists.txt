@@ -17,10 +17,13 @@ set_target_properties(sahfte PROPERTIES
     ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/sahfte"
 )
 
-#Add threading blocks for cross build
-find_package(TBB REQUIRED)
+option(USE_INTEL_TBB "Enable use of Intel Threading Building Blocks" OFF)
 
-target_link_libraries(sahfte PRIVATE TBB::tbb)
+if(USE_INTEL_TBB)
+    #Add threading blocks for cross build
+    find_package(TBB REQUIRED)
+    target_link_libraries(sahfte PRIVATE TBB::tbb)
+endif()
 
 add_custom_command(
     TARGET sahfte POST_BUILD

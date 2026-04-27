@@ -89,11 +89,12 @@ PYBIND11_MODULE(sahfte, m) {
             rotation (float): the rotation of the object about the Z-axis on [0, 2pi]
             modality (str): a string with the modality the object detection came from
             class_name (str): the name of the class for the detection
-            confidence (float): the confidence of the detection on [0, 1] 
+            confidence (float): the confidence of the detection on [0, 1]
+            uuid (str): a uuid for the detection, allowing you to track specific items through time 
         )doc")
 
-        .def(py::init([](Vec3D center, Vec3D local, std::size_t z, Vec3D dim, double rot, std::string mod, std::string cls, double conf) {
-            return Fuser::ObjectDetection{center, local, z, dim, rot, mod, cls, conf};
+        .def(py::init([](Vec3D center, Vec3D local, std::size_t z, Vec3D dim, double rot, std::string mod, std::string cls, double conf, std::string uuid) {
+            return Fuser::ObjectDetection{center, local, z, dim, rot, mod, cls, conf, uuid};
         }))
 
         .def_readonly(
@@ -123,7 +124,12 @@ PYBIND11_MODULE(sahfte, m) {
         .def_readonly(
             "confidence", 
             &Fuser::ObjectDetection::det_confidence
+        )
+        .def_readonly(
+            "uuid", 
+            &Fuser::ObjectDetection::uuid
         );
+
 
     /**
      * @brief bindings for the fusion object
@@ -191,7 +197,7 @@ PYBIND11_MODULE(sahfte, m) {
             )doc")
 
         .def("add_inference", 
-            static_cast<void (Fuser::*)(Vec3D&, Vec3D&, double, std::string&, std::string&, double, bool)>(
+            static_cast<void (Fuser::*)(Vec3D&, Vec3D&, double, std::string&, std::string&, double, std::string&, bool)>(
                 &Fuser::add_inference
             ),
             py::arg("pos"), 
@@ -200,6 +206,7 @@ PYBIND11_MODULE(sahfte, m) {
             py::arg("mod_name"), 
             py::arg("class_name"), 
             py::arg("confidence"),
+            py::arg("uuid"),
             py::arg("global_position") = true, 
             R"doc(
             Inserts a new inference into the internal buffer that stages for fusion
@@ -211,6 +218,7 @@ PYBIND11_MODULE(sahfte, m) {
                 modality (str): the modality that this detection came from
                 class_name (str): the class name of the inference
                 confidence (float): the confidence of the detection on [0, 2pi]
+                uuid (str): the UUID of the inference so groups can be tracked
             )doc")
 
         .def("fuse", 

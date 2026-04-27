@@ -15,5 +15,10 @@ if (USE_STD_FORMAT)
     target_compile_definitions(core_lib PRIVATE USE_STD_FORMAT)
 endif()
 
+#Add optimizations for core lib build
+target_compile_options(core_lib PRIVATE 
+    $<$<CONFIG:Release>:-O3;-march=native>
+)
+
 #Make a public interface for the headers of this library
 target_include_directories(core_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/inc)
