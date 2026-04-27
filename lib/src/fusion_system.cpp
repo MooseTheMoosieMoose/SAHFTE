@@ -439,7 +439,7 @@ void Fuser::merge_boxes() {
 #ifdef USE_STD_FORMAT
                     uuid_string = std::format("{}{}:", uuid_string, new_node.uuid);
 #else
-                    uuid_string += new_node.uuid.insert(0, 1, ':');
+                    uuid_string += new_node.uuid.append(1, ':');
 #endif
                 }
 

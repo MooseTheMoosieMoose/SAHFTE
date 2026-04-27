@@ -37,7 +37,7 @@ def main():
               Class Name: {item.class_name}\n\t \
               Confidence: {item.confidence}\n\t \
               Modality String: {item.modality}\n\t \
-              UUID String: {item.uuid}")
+              UUID String: [{item.uuid}]")
 
     fuser.empty_buffers()
 
