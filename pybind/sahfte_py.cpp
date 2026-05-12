@@ -241,6 +241,18 @@ PYBIND11_MODULE(sahfte, m) {
                 A read-only view into a list that contains the results of the last call to `fuse()`
             )doc")
 
+        .def("get_output_copy", 
+            &Fuser::get_output,
+            py::return_value_policy::copy,
+            R"doc(
+            Get an explict copy of the output buffer. If this is empty when you expect it to not be, check
+            `is_ok()`
+
+            Returns:
+                A copy of the contents of the output buffer that contains the results of the last call to `fuse()`
+                This should generally be preferred over `get_output` to prevent double frees when working with Python
+            )doc")
+
         .def("empty_buffers", 
             &Fuser::empty_buffers, 
             R"doc(
