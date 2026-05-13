@@ -223,6 +223,19 @@ public:
     };
 
     /**
+     * @brief While the C++ standard is great, we unfortunatly have to define what equality means between a pair
+     * of strings
+     */
+    struct PairEqual {
+        using is_transparent = void;
+
+        template <typename L, typename R>
+        bool operator() (const L& lhs, const R& rhs) const {
+            return (lhs.first == rhs.first) && (lhs.second == rhs.second);
+        }
+    };
+
+    /**
      * @brief in order to use transparent lookup, we have to bully our unordered maps a little bit to 
      * accept strings as the key, but allow for string views on lookup so we dont make temporaries
      */
@@ -237,12 +250,6 @@ public:
             return std::hash<std::string_view>{}(view);
         }
 
-        /**
-         * @brief hasher specialization for const ref
-         */
-        std::size_t operator() (const std::string_view& view) const {
-            return std::hash<std::string_view>{}(view);
-        }
     };
 
 /*=====================================================================================================
@@ -308,7 +315,7 @@ public:
      * @param default_val the default value for class confidences that arent in the provided map
      * @note since this will only be called once, this was changed from an R-value reference to a value in V2 for saftey
      */
-    void assign_class_confidence_map(std::unordered_map<std::pair<std::string, std::string>, double, PairHash, std::equal_to<>> map, double default_val = 1);
+    void assign_class_confidence_map(std::unordered_map<std::pair<std::string, std::string>, double, PairHash, PairEqual> map, double default_val = 1);
 
     /**
      * @brief assigns the internal confidence map that ties a modality passed as a string and a weight that is applied when fusing
@@ -469,7 +476,7 @@ private:
     double ref_heading_sin = 0;
 
     //A map which keys {modality, class} -> confidence for weighted averaging of class
-    std::unordered_map<std::pair<std::string, std::string>, double, PairHash, std::equal_to<>> class_confidence_map {};
+    std::unordered_map<std::pair<std::string, std::string>, double, PairHash, PairEqual> class_confidence_map {};
 
     //A map which keys {modality} -> confidence for weighted averaging of pos
     std::unordered_map<std::string, double, StringViewHash, std::equal_to<>> position_confidence_map {};

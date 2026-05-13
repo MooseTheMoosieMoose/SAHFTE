@@ -92,7 +92,16 @@ PYBIND11_MODULE(sahfte, m) {
         )doc")
 
         .def(py::init([](Vec3D global, Vec3D local, Vec3D dim, double rot, std::string mod, std::string cls, double conf, std::string uuid) {
-            return Fuser::FusionResult{uuid, mod, cls, local, global, dim, rot, conf};
+            return Fuser::FusionResult {
+                uuid, 
+                mod, 
+                cls, 
+                local, 
+                global, 
+                dim, 
+                rot, 
+                conf
+            };
         }))
 
         .def_readonly(
@@ -156,7 +165,7 @@ PYBIND11_MODULE(sahfte, m) {
 
         3.d. Check for errors with `is_ok()`, if there are errors read with `get_error()`
         
-        3.e. Pop fused outputs using the `get_output()` or `get_output_copy()` method
+        3.e. Pop fused outputs using the `get_output_copy()` method
         
         3.f. Flush the input/output buffers with `empty_buffers()`
 
@@ -164,23 +173,24 @@ PYBIND11_MODULE(sahfte, m) {
             thread_count (int): the number of *auxillary* threads this object should manage, effective thread count is thread_count + 1
             spatial_bit_depth (int): the degree of spatial division to use on [1, 21], higher numbers are better but have diminishing returns
             bounding_volume (Vec3D): the clipping volume in meters, anything inside is kept, everything else is thrown
-            starting_origin (Vec3D): the base GPS reference to initially use (lat, long, alt) 
+            starting_origin (Vec3D): the base GPS reference to initially use (lat, long, alt)
+            starting_heading (float): the starting heading to use [0, 2pi], 0 North, Pi/2 East, etc
         )doc")
 
-        .def(py::init([](std::size_t threads, uint8_t depth, 
-                std::optional<Vec3D> volume, 
-                std::optional<Vec3D> origin) {
+        .def(py::init([](std::size_t threads, uint8_t depth, std::optional<Vec3D> volume, std::optional<Vec3D> origin, double heading) {
                 return new Fuser(
                     threads, 
                     depth, 
                     volume.value_or(Vec3D{100, 100, 100}), 
-                    origin.value_or(Vec3D{0, 0, 0})
+                    origin.value_or(Vec3D{0, 0, 0}),
+                    heading
                 );
             }), 
             py::arg("thread_count") = 1,
             py::arg("spatial_bit_depth") = 8,
             py::arg("bounding_volume") = py::none(),
-            py::arg("starting_origin") = py::none()
+            py::arg("starting_origin") = py::none(),
+            py::arg("starting_heading") = 0.0
         )
 
         .def("reserve_inferences", 
@@ -231,18 +241,6 @@ PYBIND11_MODULE(sahfte, m) {
                 global/local position
             )doc")
 
-        .def("get_output", 
-            &Fuser::get_output,
-            py::return_value_policy::reference_internal,
-            R"doc(
-            Get a read-only view of the output buffer, once you have read this you should
-            call `empty_buffers()`. If this is empty when you expect it to not be, check
-            `is_ok()`
-
-            Returns:
-                A read-only view into a list that contains the results of the last call to `fuse()`
-            )doc")
-
         .def("get_output_copy", 
             &Fuser::get_output,
             py::return_value_policy::copy,
@@ -264,7 +262,7 @@ PYBIND11_MODULE(sahfte, m) {
 
         .def("assign_class_confidence_map", [](Fuser& self, std::map<std::pair<std::string, std::string>, double> m, double default_val) {
                 // Create the specialized internal map type
-                std::unordered_map<std::pair<std::string, std::string>, double, Fuser::PairHash, std::equal_to<>> internal_map;
+                std::unordered_map<std::pair<std::string, std::string>, double, Fuser::PairHash, Fuser::PairEqual> internal_map;
                 
                 // Transfer data from the standard map to the specialized one
                 for (const auto& [key, value] : m) {
@@ -284,10 +282,15 @@ PYBIND11_MODULE(sahfte, m) {
                 default_val (float): the value used by the fusion system when theres no matching keys in the map
             )doc")
 
-        .def("assign_modality_pos_confidence_map", 
-            &Fuser::assign_modality_pos_confidence_map,
+            .def("assign_modality_pos_confidence_map", [](Fuser& self, std::map<std::string, double> m, double default_val) {
+                std::unordered_map<std::string, double, Fuser::StringViewHash, std::equal_to<>> internal_map;
+                for (const auto& [key, value] : m) {
+                    internal_map[key] = value;
+                }
+                self.assign_modality_pos_confidence_map(internal_map, default_val);
+            },
             py::arg("map"),
-            py::arg("default_val") = 1, 
+            py::arg("default_val") = 1,
             R"doc(
             assigns the internal confidencer map that keys {modality} -> weight that is used in fusion for position
 
@@ -296,10 +299,15 @@ PYBIND11_MODULE(sahfte, m) {
                 default_val (float): the value used by the fusion system when theres no matching keys in the map
             )doc")
 
-        .def("assign_modality_dim_confidence_map", 
-            &Fuser::assign_modality_dim_confidence_map,
+            .def("assign_modality_dim_confidence_map", [](Fuser& self, std::map<std::string, double> m, double default_val) {
+                std::unordered_map<std::string, double, Fuser::StringViewHash, std::equal_to<>> internal_map;
+                for (const auto& [key, value] : m) {
+                    internal_map[key] = value;
+                }
+                self.assign_modality_dim_confidence_map(internal_map, default_val);
+            },
             py::arg("map"),
-            py::arg("default_val") = 1, 
+            py::arg("default_val") = 1,
             R"doc(
             assigns the internal confidencer map that keys {modality} -> weight that is used in fusion for dimensions
 
@@ -311,7 +319,7 @@ PYBIND11_MODULE(sahfte, m) {
         .def("set_reference_origin", 
             &Fuser::set_reference_origin,
             py::arg("origin"),
-            py::arg("heading")
+            py::arg("heading"),
             R"doc(
             Sets the internal reference origin that local and global positions are calculated off of
 

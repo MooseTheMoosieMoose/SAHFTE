@@ -46,7 +46,7 @@ void Fuser::add_inference(
     std::string_view class_name, 
     double confidence,
     std::string_view uuid,
-    bool global_position = true
+    bool global_position
 ) {
     //Switch based on if the position is given in global or local coordinates,
     //Populating the missing coordinate system along the way.
@@ -143,7 +143,7 @@ void Fuser::empty_buffers() {
 }
 
 void Fuser::assign_class_confidence_map(
-    std::unordered_map<std::pair<std::string, std::string>, double, PairHash, std::equal_to<>> map,
+    std::unordered_map<std::pair<std::string, std::string>, double, PairHash, PairEqual> map,
     double default_val
 ) {
     class_confidence_map = map;
