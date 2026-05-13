@@ -10,7 +10,7 @@
  * @author Moose Abou-Harb
  * @brief this file  contains the headers and necessary templates for working with the threadpool system that
  * SAHFTE uses, care should be taken while editing this file as its arguably the most complex part with its templates
- * @copyright `26, Lisenced under whatever Paccar Inc.'s requirements are
+ * @copyright `26, Moose Abou-Harb under the 3-Clause BSD Lisence
  */
 
 #pragma once

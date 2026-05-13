@@ -9,7 +9,7 @@
  * @file common.cpp
  * @author Moose Abou-Harb
  * @brief this file  contains the function definitions for the headers deinfed in common.hpp
- * @copyright `26, Lisenced under whatever Paccar Inc.'s requirements are
+ * @copyright `26, Moose Abou-Harb under the 3-Clause BSD Lisence
  */
 
 #include <cmath>       //Useful math functions like round, floor, abs, etc
@@ -25,7 +25,7 @@ namespace FusionSystem {
                                            Coord Converter Functions
 =====================================================================================================*/
 
-Vec3D geo_to_local(const Vec3D& origin, const Vec3D& target) {
+Vec3D geo_to_local(const Vec3D& origin, const Vec3D& target, double head_cos, double head_sin) {
     //Define useful consts for the calculations
     const double earth_radius = 6378137.0;
     constexpr double deg_to_rad = std::numbers::pi / 180.0;
@@ -37,28 +37,36 @@ Vec3D geo_to_local(const Vec3D& origin, const Vec3D& target) {
 
     //Becuase latitude lines shrink around the pole we need a cos term to fix them
     const double radius_at_lat = earth_radius * std::cos(origin.x * deg_to_rad);
-    const double x_meters = d_lat * deg_to_rad * earth_radius;
 
-    //Using the consts and the diff we can get the y
-    const double y_meters = -(d_lon * deg_to_rad * radius_at_lat);
+    //calculate meter distance in world frame with north and east
+    double world_n = d_lat * deg_to_rad * earth_radius;
+    double world_e = d_lon * deg_to_rad * radius_at_lat;
+
+    //Now we can rotate the world frame by the heading
+    double local_x = (world_n * head_cos) + (world_e * head_sin);
+    double local_y = (-world_n * head_sin) + (world_e * head_cos);
 
     //Return the finished struct, RVO reduces passing burden I hope
-    return Vec3D{x_meters, y_meters, d_alt};
+    return Vec3D{local_x, local_y, d_alt};
 }
 
-Vec3D local_to_geo(const Vec3D& origin, const Vec3D& target) {
+Vec3D local_to_geo(const Vec3D& origin, const Vec3D& target, double head_cos, double head_sin) {
     const double earth_radius = 6378137.0;
     constexpr double rad_to_deg = 180.0 / std::numbers::pi;
     constexpr double deg_to_rad = std::numbers::pi / 180.0;
 
+    //Get the relative rotation in terms of the world frame
+    double world_n = (target.x * head_cos) - (target.y * head_sin);
+    double world_e = (target.x * head_sin) + (target.y * head_cos);
+
     //Convert the distance traveled into latitude degrees
-    double d_lat = (target.x / earth_radius) * rad_to_deg;
+    double d_lat = (world_n / earth_radius) * rad_to_deg;
 
     //Convert the earth's radius at the target latitude
     double radius_at_lat = earth_radius * std::cos(origin.x * deg_to_rad);
 
     //Now that we have that radius we can work back to get the longitude
-    double d_lon = (-target.y / radius_at_lat) * rad_to_deg;
+    double d_lon = (world_e / radius_at_lat) * rad_to_deg;
 
     //Now that we have the offsets traveled, we add thoes degrees to our existing
     //Position to create a new one
@@ -125,7 +133,7 @@ std::optional<uint64_t> local_to_z_order(
 }
 
 double distance_between(const Vec3D& a, const Vec3D& b) {
-    return std::sqrt(std::pow((b.x - a.x), 2) + std::pow((b.y - a.y), 2) + std::pow((b.y - a.y), 2));
+    return std::pow((b.x - a.x), 2) + std::pow((b.y - a.y), 2) + std::pow((b.y - a.y), 2);
 }
 
 } //End namespace Fusion System

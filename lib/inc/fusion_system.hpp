@@ -10,7 +10,7 @@
  * @author Moose Abou-Harb
  * @brief this file  contains the headers and structs needed to interact with the Fusion System, when building as
  * a library this should serve as the primary header interface
- * @copyright `26, Lisenced under whatever Paccar Inc.'s requirements are
+ * @copyright `26, Moose Abou-Harb under the 3-Clause BSD Lisence
  */
 
 #pragma once
@@ -18,6 +18,7 @@
 #include <unordered_map> //For hash maps
 #include <string>        //For dynamic strings
 #include <cstdint>       //For standard ints (uint32_t, etc)
+#include <string_view>   //For range based string views to pass in UUIDs
 
 #include "common.hpp"     //Common coord conversions and Vec3D
 #include "mtx_ds.hpp"     //Thread safe queues and vectors
@@ -64,8 +65,9 @@ public:
      * number the more granular the spatial division, but this has diminishing returns
      * @param volume is the total space around the reference origin that we are interested in. This is in meters.
      * @param starting_origin the point in global space (latitude, longitude, altitude) where the fusion will center around
+     * @param starting_heading the heading to initilize with as a Z-axis rotation in radians with 0 being north, pi/2 being east, etc.
      */
-    Fuser(std::size_t thread_count, uint8_t spatial_bit_depth, Vec3D volume, Vec3D starting_origin) :
+    Fuser(std::size_t thread_count, uint8_t spatial_bit_depth, Vec3D volume, Vec3D starting_origin, double starting_heading) :
         bit_depth(spatial_bit_depth),
         bounding_volume(volume),
         ref_origin(starting_origin)
@@ -108,35 +110,43 @@ public:
     /**
      * @brief A Struct which holds the details of an object detection for input, also stores helpful information that 
      * can be cached and used throughout the fusion process
-     * @todo change layout to optimize alignment
+     * @todo check Python bindings and use cases now that struct is align optimized
+     * @note this object is now heap-free as of V2
      */
     struct ObjectDetection {
+        //24 Byte Objects
         //Global space center
         Vec3D center;
 
         //Local space center
         Vec3D local_center;
 
-        //Z ordering value
-        std::size_t z_order;
-
         //Dimensions in Meters
         Vec3D dim;
+
+        //16 byte objects
+        //The UUID of the detection
+        std::string_view uuid;
+
+        //The modality name
+        std::string_view modality;
+
+        //The index of the class name
+        std::string_view class_name;
+
+        //The corresponding axes from this objects rotation
+        Vec2D axes_a;
+        Vec2D axes_b;
+
+        //8 Byte object
+        //Z ordering value
+        std::size_t z_order;
 
         //Rotation of the detection along its Z-axis
         double rotation;
 
-        //The modality name
-        std::string modality;
-
-        //The Name of the class detection
-        std::string class_name;
-
         //The detection confidence
         double det_confidence;
-
-        //The UUID of the detection
-        std::string uuid;
 
         /**
          * @brief an overload of the less than operator to provide `std::sort` with an operation to sort based
@@ -148,18 +158,90 @@ public:
     };
 
     /**
+     * @brief The final product produced by the fuser, strips away some of the internal values used by the system
+     * and also ensures that the passed back heap string is owned
+     * @note this object is new as of V2, and is partially heap-bound 
+     */
+    struct FusionResult {
+        //An owned string that contains the objects tracked UUID
+        std::string uuid;
+
+        //The modality name
+        std::string modality;
+
+        //The class name
+        std::string class_name;
+
+        //The position of the result in local offset space from the sensors
+        Vec3D local_position;
+
+        //The position of the result in global space (lat, long, alt)
+        Vec3D global_position;
+
+        //The bounding box dimensions in meters
+        Vec3D dimensions;
+
+        //The Z-axis rotation of the object
+        double rotation;
+
+        //The results confidence
+        double confidence;
+    };
+
+    /**
      * @brief a struct to hold the PairHash operator, which is used in the class wide confidence
-     * map so that they can employ std::unorderd map, and their O(1) access & insert time
+     * map so that they can employ std::unorderd map, and their O(1) access & insert time, and
+     * thread-safe read access
      */
     struct PairHash {
+
+        //A tag to make the hasher transparent
+        using is_transparent = void;
+
+        /**
+         * @brief to ensure consistancy we use the string view as the common denominator in hashing
+         */
+        std::size_t hash_string(std::string_view view) const {
+            return std::hash<std::string_view>{}(view);
+        }
+
+
         /**
          * @brief the hashing operator used by the class wide confidence map, employs `std::hash`
          * across an `std::pair` of `std::strings`
          */
         std::size_t operator() (const std::pair<std::string, std::string>& p) const {
-            std::size_t first_hash = std::hash<std::string>{}(p.first);
-            std::size_t second_hash = std::hash<std::string>{}(p.second);
-            return first_hash ^ (second_hash << 1);
+            return hash_string(p.first) ^ (hash_string(p.second) << 1);
+        }
+
+        /**
+         * @brief to use transparent hashing we must also override string views as well
+         */
+        std::size_t operator() (const std::pair<std::string_view, std::string_view>& p) const {
+            return hash_string(p.first) ^ (hash_string(p.second) << 1);
+        }
+    };
+
+    /**
+     * @brief in order to use transparent lookup, we have to bully our unordered maps a little bit to 
+     * accept strings as the key, but allow for string views on lookup so we dont make temporaries
+     */
+    struct StringViewHash {
+        //A tag to make the hasher transparent
+        using is_transparent = void;
+
+        /**
+         * @brief the hasher invokation
+         */
+        std::size_t operator() (std::string_view view) const {
+            return std::hash<std::string_view>{}(view);
+        }
+
+        /**
+         * @brief hasher specialization for const ref
+         */
+        std::size_t operator() (const std::string_view& view) const {
+            return std::hash<std::string_view>{}(view);
         }
     };
 
@@ -181,31 +263,7 @@ public:
      * @param dim the dimensions of the object in meters as a `Vec3D`
      * @param rotation the rotation of the object around the up/down (Z) axis
      * @param mod_name the name of the modality that the inference is coming from
-     * @param class_name the detected class
-     * @param uuid the UUID of the detection for logging and tracking
-     * @param confidence the confidence in the detected class bounded on [0, 1]
-     * @note this is the R-Value version of this function, and will `std::move` values
-     * @note once an inference is staged with this function the only way to remove it is to clear
-     * the entire internal inference buffer via a call to `empty_buffers()`
-     */
-    void add_inference(
-        Vec3D&& pos, 
-        Vec3D&& dim, 
-        double rotation, 
-        std::string&& mod_name, 
-        std::string&& class_name, 
-        double confidence,
-        std::string&& uuid,
-        bool global_position = true
-    );
-
-    /**
-     * @brief inserts an inference into the system
-     * @param pos a position in global space (latitude, longitude, altitude) as a `Vec3D`
-     * @param dim the dimensions of the object in meters as a `Vec3D`
-     * @param rotation the rotation of the object around the up/down (Z) axis
-     * @param mod_name the name of the modality that the inference is coming from
-     * @param class_name the detected class
+     * @param class_name the name of the detected class
      * @param uuid the UUID of the detection for logging and tracking
      * @param confidence the confidence in the detected class bounded on [0, 1]
      * @note this is the L-Value version of this function, and will NOT `std::move` values
@@ -213,27 +271,28 @@ public:
      * the entire internal inference buffer via a call to `empty_buffers()`
      */
     void add_inference(
-        Vec3D& pos, 
-        Vec3D& dim, 
+        Vec3D pos, 
+        Vec3D dim, 
         double rotation, 
-        std::string& mod_name, 
-        std::string& class_name, 
+        std::string_view mod_name, 
+        std::string_view class_name, 
         double confidence,
-        std::string& uuid,
+        std::string_view uuid,
         bool global_position = true
     );
 
     /**
      * @brief invokes the internal functions used for fusing, will take all current settings, all pushed inferneces, the origin they were
      * pushed with, etc and will populate the output vector, which can be fetched with `get_output()`
+     * @param mod_count the number of params in the current set of staged inferences, will short_circuit at 1
      */
-    void fuse();
+    void fuse(std::size_t mod_count = 0);
     
     /**
      * @brief gets a reference to the output vector, this view should be treated as read only, but is not const for debugging
      * @note this will only ever be populated if infrences are added with `add_inference()` and `fuse()` is called on them
      */
-    std::vector<ObjectDetection>& get_output();
+    std::vector<FusionResult>& get_output();
 
     /**
      * @brief emptys the internal inference input and output buffers. This will NOT free the actual allocations of either of these
@@ -247,30 +306,34 @@ public:
      * to bias the final output class of the fuser
      * @param map the map, this is best constructed in place using initilizer list syntax for brevity and clarity
      * @param default_val the default value for class confidences that arent in the provided map
+     * @note since this will only be called once, this was changed from an R-value reference to a value in V2 for saftey
      */
-    void assign_class_confidence_map(std::unordered_map<std::pair<std::string, std::string>, double, PairHash>&& map, double default_val = 1);
+    void assign_class_confidence_map(std::unordered_map<std::pair<std::string, std::string>, double, PairHash, std::equal_to<>> map, double default_val = 1);
 
     /**
      * @brief assigns the internal confidence map that ties a modality passed as a string and a weight that is applied when fusing
      * to bias the position of the fused detections
      * @param map the map of `{modality, weight}` that biases the fusion
      * @param default_val the default value for class confidences that arent in the provided map
+     * @note since this will only be called once, this was changed from an R-value reference to a value in V2 for saftey
      */
-    void assign_modality_pos_confidence_map(std::unordered_map<std::string, double>&& map, double default_val = 1);
+    void assign_modality_pos_confidence_map(std::unordered_map<std::string, double, StringViewHash, std::equal_to<>> map, double default_val = 1);
 
     /**
      * @brief assigns the internal confidence map that ties a modality passed as a string and a weight that is applied when fusing to bias the final
      * dimensions of any fusion produced
      * @param map the map of `{modality, weight}` that biases the fusion
      * @param default_val the default value for class confidences that arent in the provided map
+     * @note since this will only be called once, this was changed from an R-value reference to a value in V2 for saftey
      */
-    void assign_modality_dim_confidence_map(std::unordered_map<std::string, double>&& map, double default_val = 1);
+    void assign_modality_dim_confidence_map(std::unordered_map<std::string, double, StringViewHash, std::equal_to<>> map, double default_val = 1);
 
     /**
      * @brief assign the current global (lat, long, alt) position that serves as the global reference origin
      * @param new_origin the new vec3D to position the reference origin at
+     * @param new_heading a double representing your rotation around the Z axis. 0 is North, pi/2 is east, etc
      */
-    void set_reference_origin(Vec3D new_origin);
+    void set_reference_origin(Vec3D new_origin, double new_heading);
 
     /**
      * @brief returns the status of the internal state of the fuser. If false, then something messed up,
@@ -342,7 +405,7 @@ private:
      * @param b another ObjectDetection that you want to check for bounding
      * @return a `bool`, `true` if `a` and `b` collide, `false`, otherwise
      * @note https://en.wikipedia.org/wiki/Hyperplane_separation_theorem
-     * @warning THIS DOES NOT HANDLE ROTATION, SMALL ROTATED OBJECTS MIGHT BE MISSED FOR FUSION
+     * @note now implements OBB instead of AABB to work with rotation as of V2
      */
     bool is_intersecting(const ObjectDetection& a, const ObjectDetection& b);
 
@@ -360,6 +423,30 @@ private:
      */
     void set_unite(std::size_t i, std::size_t j);
 
+    /**
+     * @brief given the passed string view as a key, returns the confidence in the map
+     * at that position
+     * @param key the key to search at
+     * @return a double with the confidence, or the default val if not found
+     */
+    double get_pos_confidence(std::string_view key);
+
+    /**
+     * @brief given the passed string view as a key, returns the confidence in the map
+     * at that position
+     * @param key the key to search at
+     * @return a double with the confidence, or the default val if not found
+     */
+    double get_dim_confidence(std::string_view key);
+
+    /**
+     * @brief given the passed string view pair as a key, returns the confidence in the map
+     * at that position
+     * @param key the key to search at
+     * @return a double with the confidence, or the default val if not found
+     */
+    double get_class_confidence(std::pair<std::string_view, std::string_view> key);
+
 /*=====================================================================================================
                                     General Internal Resources
 =====================================================================================================*/
@@ -376,14 +463,19 @@ private:
     //The current reference origin
     Vec3D ref_origin {};
 
+    //The current reference heading in rads, and its cos and sin component
+    double ref_heading = 0;
+    double ref_heading_cos = 0;
+    double ref_heading_sin = 0;
+
     //A map which keys {modality, class} -> confidence for weighted averaging of class
-    std::unordered_map<std::pair<std::string, std::string>, double, PairHash> class_confidence_map {};
+    std::unordered_map<std::pair<std::string, std::string>, double, PairHash, std::equal_to<>> class_confidence_map {};
 
     //A map which keys {modality} -> confidence for weighted averaging of pos
-    std::unordered_map<std::string, double> position_confidence_map {};
+    std::unordered_map<std::string, double, StringViewHash, std::equal_to<>> position_confidence_map {};
 
     //A map which keys {modality} -> confidence for weighted averaging of dimensions
-    std::unordered_map<std::string, double> dimension_confidence_map {};
+    std::unordered_map<std::string, double, StringViewHash, std::equal_to<>> dimension_confidence_map {};
 
     //Default values for unmaped keys
     double class_conf_default = 1;
@@ -402,7 +494,7 @@ private:
     std::vector<ObjectDetection> inferences {};
 
     //A Threadsafe queue that holds the results of fusion
-    TSVector<ObjectDetection> output {};
+    TSVector<FusionResult> output {};
 
     //A flag that is thrown whenever an exception is thrown in the fusion engine, hopefully never
     bool good_flag = true;

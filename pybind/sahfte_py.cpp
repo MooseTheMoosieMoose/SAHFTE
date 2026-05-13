@@ -9,7 +9,7 @@
  * @file common.cpp
  * @author Moose Abou-Harb
  * @brief this file has the Pybind11 code to generate the Python bindings for the fuser
- * @copyright `26, Lisenced under whatever Paccar Inc.'s requirements are
+ * @copyright `26, Moose Abou-Harb under the 3-Clause BSD Lisence
  */
 
 #include <pybind11/pybind11.h>     //Gets us the Pybind macros to create the Python interface
@@ -34,7 +34,7 @@ PYBIND11_MODULE(sahfte, m) {
     /**
      * @brief add module wide docs
      */
-    m.doc() = "The module for FUSION!";
+    m.doc() = "The SAHFTE fusion module. Automatically generated wrapper around C++ core";
 
     /**
      * @brief bindings for the Vec3D class with rw members
@@ -73,14 +73,12 @@ PYBIND11_MODULE(sahfte, m) {
     /**
      * @brief bindings for the object detection class with read only members
      */
-    py::class_<Fuser::ObjectDetection>(
+    py::class_<Fuser::FusionResult>(
         m, 
-        "ObjectDetection", 
+        "FusionResult", 
         R"doc(
-        ObjectDetection is a wrapper around an input inference, the intermediate
-        values the fuser processes, and the final detections it makes. It is not
-        explicitly defined for construction on the python end, but can be read
-        as it comes out the fusion system
+        FusionResult is the product of the fusion system, and includes all the internal details
+        about a single fused bounding box
 
         Attributes:
             global_center (Vec3D): the center of the detection in global space (lat, long, alt)
@@ -93,41 +91,41 @@ PYBIND11_MODULE(sahfte, m) {
             uuid (str): a uuid for the detection, allowing you to track specific items through time 
         )doc")
 
-        .def(py::init([](Vec3D center, Vec3D local, std::size_t z, Vec3D dim, double rot, std::string mod, std::string cls, double conf, std::string uuid) {
-            return Fuser::ObjectDetection{center, local, z, dim, rot, mod, cls, conf, uuid};
+        .def(py::init([](Vec3D global, Vec3D local, Vec3D dim, double rot, std::string mod, std::string cls, double conf, std::string uuid) {
+            return Fuser::FusionResult{uuid, mod, cls, local, global, dim, rot, conf};
         }))
 
         .def_readonly(
             "global_center", 
-            &Fuser::ObjectDetection::center
+            &Fuser::FusionResult::global_position
         )
         .def_readonly(
             "local_center", 
-            &Fuser::ObjectDetection::local_center
+            &Fuser::FusionResult::local_position
         )
         .def_readonly(
             "dimensions", 
-            &Fuser::ObjectDetection::dim
+            &Fuser::FusionResult::dimensions
         )
         .def_readonly(
             "rotation", 
-            &Fuser::ObjectDetection::rotation
+            &Fuser::FusionResult::rotation
         )
         .def_readonly(
             "modality",
-            &Fuser::ObjectDetection::modality
+            &Fuser::FusionResult::modality
         )
         .def_readonly(
             "class_name", 
-            &Fuser::ObjectDetection::class_name
+            &Fuser::FusionResult::class_name
         )
         .def_readonly(
             "confidence", 
-            &Fuser::ObjectDetection::det_confidence
+            &Fuser::FusionResult::confidence
         )
         .def_readonly(
             "uuid", 
-            &Fuser::ObjectDetection::uuid
+            &Fuser::FusionResult::uuid
         );
 
 
@@ -146,11 +144,11 @@ PYBIND11_MODULE(sahfte, m) {
         1. Construct an instance of the `Fuser` object with a given number of auxillary threads, a bit_depth, a 
         fusion volume and the current origin
 
-        2. Add any extra details needed like `assign_confidence_map()` to tweak the system as needed
+        2. Add any extra details needed like `assign_x_confidence_map()` to tweak the system as needed
 
         3. In a loop perform the following:
         
-        3.a. Ensure your origin is up to date with `set_reference_origin()`
+        3.a. Ensure your origin and heading are up to date with `set_reference_origin()`
 
         3.b. Add infrences using the `add_inference()` methods
 
@@ -158,7 +156,7 @@ PYBIND11_MODULE(sahfte, m) {
 
         3.d. Check for errors with `is_ok()`, if there are errors read with `get_error()`
         
-        3.e. Pop fused outputs using the `get_output()` method
+        3.e. Pop fused outputs using the `get_output()` or `get_output_copy()` method
         
         3.f. Flush the input/output buffers with `empty_buffers()`
 
@@ -181,7 +179,7 @@ PYBIND11_MODULE(sahfte, m) {
             }), 
             py::arg("thread_count") = 1,
             py::arg("spatial_bit_depth") = 8,
-            py::arg("bounding_volume") = py::none(), // Stubgen sees 'None'
+            py::arg("bounding_volume") = py::none(),
             py::arg("starting_origin") = py::none()
         )
 
@@ -197,9 +195,7 @@ PYBIND11_MODULE(sahfte, m) {
             )doc")
 
         .def("add_inference", 
-            static_cast<void (Fuser::*)(Vec3D&, Vec3D&, double, std::string&, std::string&, double, std::string&, bool)>(
-                &Fuser::add_inference
-            ),
+            &Fuser::add_inference,
             py::arg("pos"), 
             py::arg("dim"), 
             py::arg("rotation"), 
@@ -214,7 +210,7 @@ PYBIND11_MODULE(sahfte, m) {
             Args:
                 pos (Vec3D): the center of the detection
                 dim (Vec3D): the dimensions of the inference in meters
-                rotation (float): the rotation of the inference on [0, 2pi]
+                rotation (float): the rotation of the inference on [0, 2pi] with 0 being north
                 modality (str): the modality that this detection came from
                 class_name (str): the class name of the inference
                 confidence (float): the confidence of the detection on [0, 2pi]
@@ -222,11 +218,17 @@ PYBIND11_MODULE(sahfte, m) {
             )doc")
 
         .def("fuse", 
-            &Fuser::fuse, 
+            &Fuser::fuse,
+            py::arg("mod_count") = 0,
             R"doc(
             Performs the actual fusion once all detections are pumped into the system with
             `add_inference()`, once this is complete you should check `is_ok()`, then you can
             start reading fusions off of `get_output()`
+
+            Args:
+                mod_count (int): the number of different modalities currently staged in the input buffers.
+                When this is exactly 1, it will short circuit and return the input buffers annotated with their
+                global/local position
             )doc")
 
         .def("get_output", 
@@ -260,9 +262,9 @@ PYBIND11_MODULE(sahfte, m) {
             used by either buffer. Should be called once per fusion cycle
             )doc")
 
-        .def("assign_class_confidence_map", [](Fuser &self, std::map<std::pair<std::string, std::string>, double> &m, double default_val) {
+        .def("assign_class_confidence_map", [](Fuser& self, std::map<std::pair<std::string, std::string>, double> m, double default_val) {
                 // Create the specialized internal map type
-                std::unordered_map<std::pair<std::string, std::string>, double, Fuser::PairHash> internal_map;
+                std::unordered_map<std::pair<std::string, std::string>, double, Fuser::PairHash, std::equal_to<>> internal_map;
                 
                 // Transfer data from the standard map to the specialized one
                 for (const auto& [key, value] : m) {
@@ -270,7 +272,7 @@ PYBIND11_MODULE(sahfte, m) {
                 }
                 
                 // Call the actual C++ method
-                self.assign_class_confidence_map(std::move(internal_map), default_val);
+                self.assign_class_confidence_map(internal_map, default_val);
             },
             py::arg("map"), 
             py::arg("default_val") = 1.0,
@@ -309,11 +311,13 @@ PYBIND11_MODULE(sahfte, m) {
         .def("set_reference_origin", 
             &Fuser::set_reference_origin,
             py::arg("origin"),
+            py::arg("heading")
             R"doc(
             Sets the internal reference origin that local and global positions are calculated off of
 
             Args:
                 origin: (Vec3D) the new origin (lat, long, altitude)
+                heading: (Vec3D) the new heading [0, 2pi] with 0 being North, pi/2 being east, etc.
             )doc")
 
         .def("is_ok", 

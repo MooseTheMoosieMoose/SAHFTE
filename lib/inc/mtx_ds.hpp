@@ -10,7 +10,7 @@
  * @author Moose Abou-Harb
  * @brief this file  contains the templates for some mutex protected data structures, they are simply STL
  * implementations protected with lock_guards
- * @copyright `26, Lisenced under whatever Paccar Inc.'s requirements are
+ * @copyright `26, Moose Abou-Harb under the 3-Clause BSD Lisence
  */
 
 #pragma once

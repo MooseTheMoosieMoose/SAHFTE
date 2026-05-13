@@ -10,7 +10,7 @@
  * @author Moose Abou-Harb
  * @brief this file  contains the headers for common details in the program,
  * including a reusable `Vec3D` component and basic coordinate conversions
- * @copyright `26, Lisenced under whatever Paccar Inc.'s requirements are
+ * @copyright `26, Moose Abou-Harb under the 3-Clause BSD Lisence
  */
 
 #pragma once
@@ -110,6 +110,15 @@ struct Vec3D {
     }
 };
 
+/**
+ * @brief very similar to Vec3D but with only 2 dimensions
+ * @note for docs refer to Vec3D and remove the Z dimension
+ */
+struct Vec2D {
+    double x;
+    double y;
+};
+
 /*=====================================================================================================
                                            Coord Converter Functions
 =====================================================================================================*/
@@ -119,12 +128,14 @@ struct Vec3D {
  * represent signed distances in meters from `target` to `origin`
  * @param origin is the point you want mapped to `(0, 0, 0)`
  * @param target is the point at which you want to find its distance from `origin`
+ * @param head_cos the cosine of the current heading
+ * @param head_sin the sine of the current heading
  * @return a `Vec3D` with the distance in meters in each component from the `target` to `origin`
  * @note this does NOT implement the full haversine formula, but instead works assuming that points
  * are close enough that we can treat them as being on a flat plane, see here:
  * https://en.wikipedia.org/wiki/Haversine_formula
  */
-Vec3D geo_to_local(const Vec3D& origin, const Vec3D& target);
+Vec3D geo_to_local(const Vec3D& origin, const Vec3D& target, double head_cos, double head_sin);
 
 /**
  * @brief takes in a position `origin` that marks the geographic center of your frame of 
@@ -132,12 +143,14 @@ Vec3D geo_to_local(const Vec3D& origin, const Vec3D& target);
  * and produces the geographic position following thoes distances from the target position
  * @param origin a `Vec3D` with the geographic position to reference from
  * @param target a `Vec3D` with the distance in meters from that reference position
+ * @param head_cos the cosine of the current heading
+ * @param head_sin the sine of the current heading
  * @return a `Vec3D` with the geographic (lat, long, alt) equivalent of target
  * @note this does NOT implement the full haversine formula, but instead works assuming that points
  * are close enough that we can treat them as being on a flat plane, see here:
  * https://en.wikipedia.org/wiki/Haversine_formula
  */
-Vec3D local_to_geo(const Vec3D& origin, const Vec3D& target);
+Vec3D local_to_geo(const Vec3D& origin, const Vec3D& target, double head_cos, double head_sin);
 
 /**
  * @brief takes in a local position and converts it to a position along a Z-order curve in 3d space
@@ -156,8 +169,9 @@ std::optional<uint64_t> local_to_z_order(const Vec3D& local_target, const Vec3D&
  * @brief calculates the euclidian distance between two points as `Vec3D`s with double percision
  * @param a a `Vec3D` which represents the first position to measure between
  * @param b a `Vec3D` which represents the second position to measure between
- * @return double - representing the distance between a and b
- * @note uses the basic formula: `sqrt((b.x - a.x)^2 + (b.y - a.y)^2 + (b.z - a.z)^2)`
+ * @return double - representing the squared distance between a and b
+ * @note uses the basic formula: `(b.x - a.x)^2 + (b.y - a.y)^2 + (b.z - a.z)^2)`
+ * @note no longer takes the sqrt as of V2 as an optimization
  */
 double distance_between(const Vec3D& a, const Vec3D& b);
 
