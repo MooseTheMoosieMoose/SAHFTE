@@ -5,7 +5,7 @@ import json, uuid, time, random, math
 
 #Asymptotic Behavior Testing Config
 OBJ_COUNT= 25
-RUNS = 1000
+RUNS = 10000
 
 #Fuser Config
 AUX_THREADS = 3
@@ -55,7 +55,9 @@ def main():
 
             #Empty the buffers
             fuser.empty_buffers()
-            print(f"Completed Run: {loop_indx}")
+
+            if (loop_indx % 100 == 0):
+                print(f"Completed Run: {loop_indx}")
             
     except Exception as e:
         print(f"Something went wrong python wise: {e}")

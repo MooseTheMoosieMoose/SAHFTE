@@ -113,9 +113,6 @@ public:
         //Keep track of the index within each task so that it can be passed to the function
         std::size_t indx = 0;
 
-        //Increment the count on the queued jobs
-        queued_jobs_count += jobs;
-
         for (std::size_t i = 0; i < jobs; i++) {
             auto lambda_iter_end = std::next(lambda_iter_begin, elem_per_job);
             if (i == jobs - 1 || lambda_iter_end > container.end()) {
@@ -140,6 +137,9 @@ public:
             lambda_iter_begin = lambda_iter_end;
             
         }
+
+        //Increment the count on the queued jobs
+        queued_jobs_count += jobs;
 
         //Wait until all jobs are pushed and awake all
         queue_cv.notify_all();
@@ -177,8 +177,6 @@ public:
         auto item_iter = container.begin();
         auto end_iter = container.end();
         std::mutex container_iter_mtx {};
-
-        queued_jobs_count += jobs;
 
         //Create each job, allow them to lock onto an element and pass it to their callable
         for (std::size_t i = 0; i < jobs; i++) {
@@ -226,6 +224,8 @@ public:
             //As of v3 CV flagging is moved to outside the loop
 
         }
+
+        queued_jobs_count += jobs;
 
         queue_cv.notify_all();
 
@@ -284,12 +284,6 @@ private:
 
     //Exit flag is set true when the child threads are ready to rejoin
     std::atomic<bool> exit_flag;
-
-    //Wait mutex for the calling thread to pend on
-    alignas(CACHE_LINE_SIZE) std::mutex wait_mtx {};
-    
-    //Wait CV so we dont burn cycles waiting for the TP to finish
-    std::condition_variable wait_cv {};
 
 /*=====================================================================================================
                                     Private Utility Functions

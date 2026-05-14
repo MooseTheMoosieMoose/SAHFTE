@@ -61,12 +61,11 @@ void Threadpool::join_and_process() {
         }
     }
 
-    //Wait for the number of running tasks to go to zero
-    {
-        std::unique_lock<std::mutex> lock(wait_mtx);
-        wait_cv.wait(lock, [this]{
-            return queued_jobs_count.load() == 0;
-        });
+    //Replace wait CV with atomic wait in V3
+    std::size_t current = queued_jobs_count.load(std::memory_order_acquire);
+    while (current > 0) {
+        queued_jobs_count.wait(current, std::memory_order_acquire);
+        current = queued_jobs_count.load(std::memory_order_acquire);
     }
 }
 
@@ -102,11 +101,9 @@ void Threadpool::process_tasks() {
         //Then execute the job
         runnable();
 
+        //Flag that the queued jobs count has decreased
         if (queued_jobs_count.fetch_sub(1, std::memory_order_acq_rel) == 1) {
-            {
-                std::lock_guard<std::mutex> wait_lock(wait_mtx);
-            }
-            wait_cv.notify_all();
+            queued_jobs_count.notify_all();
         }
 
         lock.lock();
