@@ -28,6 +28,7 @@ if(BUILD_PYTHON_BINDINGS OR (DEFINED ENV{PY_BINDS} AND NOT "$ENV{PY_BINDS}" STRE
 endif()
 
 #Build the test front end if necessary
-if(DEFINED ENV{CPP_FE} AND NOT "$ENV{CPP_FE}" STREQUAL "")
+option(CPP_FE "Build the CPP example project / tests" OFF)
+if(CPP_FE OR (DEFINED ENV{CPP_FE} AND NOT "$ENV{CPP_FE}" STREQUAL ""))
     add_subdirectory(cpp_fe)
 endif()

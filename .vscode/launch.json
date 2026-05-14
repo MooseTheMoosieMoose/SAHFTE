@@ -1,0 +1,13 @@
+{
+    "configurations": [
+    {
+        "type": "lldb-dap",
+        "request": "launch",
+        "name": "Launch",
+        "program": "/workspace/build/bin/cpp_fe",
+        "args": [],
+        "cwd": "${workspaceFolder}",
+        "disableASLR": false
+    }
+    ]
+}

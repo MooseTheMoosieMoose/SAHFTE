@@ -7,3 +7,4 @@ dump.txt
 sahfte.egg-info
 */__pycache__
 sahfte/sahfte.pyi
+countcpp.py

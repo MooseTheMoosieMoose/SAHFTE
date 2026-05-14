@@ -26,5 +26,8 @@ RUN pip install jupyter pandas numpy plotly scikit-build-core pybind11[global] p
 RUN mkdir -p /usr/local/include/nlohmann && \
     curl -o /usr/local/include/nlohmann/json.hpp https://raw.githubusercontent.com/nlohmann/json/refs/heads/develop/single_include/nlohmann/json.hpp
 
+#Get a debugger for testing
+RUN apt-get update && apt-get install -y lldb
+
 #Launch with bash as our shell
 CMD ["/bin/bash"]

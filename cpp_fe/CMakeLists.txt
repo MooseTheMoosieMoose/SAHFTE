@@ -10,3 +10,5 @@ target_include_directories(cpp_fe PRIVATE /usr/local/include/nlohmann)
 
 #Link the project to the core library
 target_link_libraries(cpp_fe PRIVATE core_lib)
+
+#Install it into a known location so we can work with it

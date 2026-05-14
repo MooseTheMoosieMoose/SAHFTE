@@ -5,7 +5,6 @@ import pathlib
 
 #All the possible classes each modality can detect
 classes = ["pedestrian", "vehicle", "traffic_cone"]
-
 #A list of all the possible modalities
 modalities = {
     "lidar" : {
@@ -29,7 +28,7 @@ modalities = {
 }
 
 #The max number of objects each modality will "see"
-object_count_range = [2, 10]
+object_count_range = [100, 100]
 
 #The distance from the vehicles path in which an object can spawn, in meters
 object_distance_range = [2, 25]

@@ -85,22 +85,20 @@ PYBIND11_MODULE(sahfte, m) {
             local_center (Vec3D): the center of the detection in local space (meters from GPS ref)
             dimensions (Vec3D): the size of the detection in meters
             rotation (float): the rotation of the object about the Z-axis on [0, 2pi]
-            modality (str): a string with the modality the object detection came from
             class_name (str): the name of the class for the detection
             confidence (float): the confidence of the detection on [0, 1]
             uuid (str): a uuid for the detection, allowing you to track specific items through time 
         )doc")
 
-        .def(py::init([](Vec3D global, Vec3D local, Vec3D dim, double rot, std::string mod, std::string cls, double conf, std::string uuid) {
+        .def(py::init([](Vec3D global, Vec3D local, Vec3D dim, double rot, std::size_t mod, std::size_t cls, double conf, std::string uuid) {
             return Fuser::FusionResult {
                 uuid, 
-                mod, 
-                cls, 
                 local, 
                 global, 
                 dim, 
+                cls, 
                 rot, 
-                conf
+                conf,
             };
         }))
 
@@ -119,10 +117,6 @@ PYBIND11_MODULE(sahfte, m) {
         .def_readonly(
             "rotation", 
             &Fuser::FusionResult::rotation
-        )
-        .def_readonly(
-            "modality",
-            &Fuser::FusionResult::modality
         )
         .def_readonly(
             "class_name", 
@@ -221,8 +215,8 @@ PYBIND11_MODULE(sahfte, m) {
                 pos (Vec3D): the center of the detection
                 dim (Vec3D): the dimensions of the inference in meters
                 rotation (float): the rotation of the inference on [0, 2pi] with 0 being north
-                modality (str): the modality that this detection came from
-                class_name (str): the class name of the inference
+                modality (int): the modality that this detection came from as an index into a list
+                class_name (int): the class of the inference as an index into a list
                 confidence (float): the confidence of the detection on [0, 2pi]
                 uuid (str): the UUID of the inference so groups can be tracked
             )doc")
@@ -260,17 +254,8 @@ PYBIND11_MODULE(sahfte, m) {
             used by either buffer. Should be called once per fusion cycle
             )doc")
 
-        .def("assign_class_confidence_map", [](Fuser& self, std::map<std::pair<std::string, std::string>, double> m, double default_val) {
-                // Create the specialized internal map type
-                std::unordered_map<std::pair<std::string, std::string>, double, Fuser::PairHash, Fuser::PairEqual> internal_map;
-                
-                // Transfer data from the standard map to the specialized one
-                for (const auto& [key, value] : m) {
-                    internal_map[key] = value;
-                }
-                
-                // Call the actual C++ method
-                self.assign_class_confidence_map(internal_map, default_val);
+        .def("assign_class_confidence_map", [](Fuser& self, std::vector<std::vector<double>> map_vec, double default_val) {
+                self.assign_class_confidence_map(map_vec, default_val);
             },
             py::arg("map"), 
             py::arg("default_val") = 1.0,
@@ -278,16 +263,13 @@ PYBIND11_MODULE(sahfte, m) {
             assigns the internal confidencer map that keys {modality, class} -> weight that is used in fusion for class name
 
             Args:
-                map (dict[tuple[str, str], float]): the bias map
+                map (list[list[float]]): the bias map, the first index (map[x]) is the modality, the second index (map[x][y]) is
+                the class
                 default_val (float): the value used by the fusion system when theres no matching keys in the map
             )doc")
 
-            .def("assign_modality_pos_confidence_map", [](Fuser& self, std::map<std::string, double> m, double default_val) {
-                std::unordered_map<std::string, double, Fuser::StringViewHash, std::equal_to<>> internal_map;
-                for (const auto& [key, value] : m) {
-                    internal_map[key] = value;
-                }
-                self.assign_modality_pos_confidence_map(internal_map, default_val);
+            .def("assign_modality_pos_confidence_map", [](Fuser& self, std::vector<double> map_vec, double default_val) {
+                self.assign_modality_pos_confidence_map(map_vec, default_val);
             },
             py::arg("map"),
             py::arg("default_val") = 1,
@@ -295,16 +277,12 @@ PYBIND11_MODULE(sahfte, m) {
             assigns the internal confidencer map that keys {modality} -> weight that is used in fusion for position
 
             Args:
-                map (dict[str, float]): the bias map
+                map (list[float]): the bias map that keys map[x] to a modality
                 default_val (float): the value used by the fusion system when theres no matching keys in the map
             )doc")
 
-            .def("assign_modality_dim_confidence_map", [](Fuser& self, std::map<std::string, double> m, double default_val) {
-                std::unordered_map<std::string, double, Fuser::StringViewHash, std::equal_to<>> internal_map;
-                for (const auto& [key, value] : m) {
-                    internal_map[key] = value;
-                }
-                self.assign_modality_dim_confidence_map(internal_map, default_val);
+            .def("assign_modality_dim_confidence_map", [](Fuser& self, std::vector<double> map_vec, double default_val) {
+                self.assign_modality_dim_confidence_map(map_vec, default_val);
             },
             py::arg("map"),
             py::arg("default_val") = 1,
@@ -312,7 +290,7 @@ PYBIND11_MODULE(sahfte, m) {
             assigns the internal confidencer map that keys {modality} -> weight that is used in fusion for dimensions
 
             Args:
-                map (dict[str, float]): the bias map
+                map (list[float]): the bias map that keys map[x] to a modality
                 default_val (float): the value used by the fusion system when theres no matching keys in the map
             )doc")
 

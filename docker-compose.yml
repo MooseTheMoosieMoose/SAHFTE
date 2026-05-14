@@ -8,6 +8,12 @@ services:
     
     security_opt:
       - "label=disable"
+      - seccomp:unconfined
+
+    cap_add:
+      - SYS_PTRACE
+      
+    init: true
 
     volumes:
       - ./:/workspace:cached,Z

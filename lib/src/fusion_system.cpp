@@ -42,10 +42,10 @@ void Fuser::add_inference(
     Vec3D pos, 
     Vec3D dim, 
     double rotation, 
-    std::string_view mod_name, 
-    std::string_view class_name, 
+    std::size_t mod_name, 
+    std::size_t class_name, 
     double confidence,
-    std::string_view uuid,
+    std::string uuid,
     bool global_position
 ) {
     //Switch based on if the position is given in global or local coordinates,
@@ -53,14 +53,14 @@ void Fuser::add_inference(
     if (global_position) {
         Vec3D local_pos = geo_to_local(ref_origin, pos, ref_heading_cos, ref_heading_sin);
         inferences.push_back(ObjectDetection{
+            .uuid = uuid,
             .center = pos,
             .local_center = local_pos, //I hope NRVO can make this snappy
             .dim = dim,
-            .uuid = uuid,
-            .modality = mod_name,
-            .class_name = class_name,
             .axes_a = Vec2D{0.0, 0.0},
             .axes_b = Vec2D{0.0, 0.0},
+            .modality = mod_name,
+            .class_name = class_name,
             .z_order = 0,
             .rotation = rotation,
             .det_confidence = confidence,
@@ -68,14 +68,14 @@ void Fuser::add_inference(
     } else {
         Vec3D global_pos = local_to_geo(ref_origin, pos, ref_heading_cos, ref_heading_sin);
         inferences.push_back(ObjectDetection{
-            .center = global_pos,
-            .local_center = pos,
-            .dim = dim,
             .uuid = uuid,
-            .modality = mod_name,
-            .class_name = class_name,
+            .center = global_pos,
+            .local_center = pos, //I hope NRVO can make this snappy
+            .dim = dim,
             .axes_a = Vec2D{0.0, 0.0},
             .axes_b = Vec2D{0.0, 0.0},
+            .modality = mod_name,
+            .class_name = class_name,
             .z_order = 0,
             .rotation = rotation,
             .det_confidence = confidence,
@@ -123,11 +123,10 @@ void Fuser::fuse(std::size_t mod_count) {
         for (const auto& inference : inferences) {
             output.storage_ref().push_back(FusionResult {
                 .uuid = std::string(inference.uuid),
-                .modality = std::string(inference.modality),
-                .class_name = std::string(inference.class_name),
                 .local_position = inference.local_center,
                 .global_position = inference.center,
                 .dimensions = inference.dim,
+                .class_name = inference.class_name,
                 .rotation = inference.rotation,
                 .confidence = inference.det_confidence
             });
@@ -140,10 +139,13 @@ void Fuser::empty_buffers() {
     //changing the underlying allocation
     inferences.clear();
     output.clear();
+    merges.clear();
+    clusters.clear();
+    parents.clear();
 }
 
 void Fuser::assign_class_confidence_map(
-    std::unordered_map<std::pair<std::string, std::string>, double, PairHash, PairEqual> map,
+    std::vector<std::vector<double>> map,
     double default_val
 ) {
     class_confidence_map = map;
@@ -151,7 +153,7 @@ void Fuser::assign_class_confidence_map(
 }
 
 void Fuser::assign_modality_pos_confidence_map(
-    std::unordered_map<std::string, double, StringViewHash, std::equal_to<>> map,
+    std::vector<double> map,
     double default_val
 ) {
     position_confidence_map = map;
@@ -159,7 +161,7 @@ void Fuser::assign_modality_pos_confidence_map(
 }
 
 void Fuser::assign_modality_dim_confidence_map(
-    std::unordered_map<std::string, double, StringViewHash, std::equal_to<>> map,
+    std::vector<double> map,
     double default_val
 ) {
     dimension_confidence_map = map;
@@ -246,6 +248,7 @@ void Fuser::order_inferences() {
         auto& indices = cull_indices.storage_ref();
         std::sort(std::execution::par_unseq, indices.begin(), indices.end(), std::greater<size_t>());
         for (size_t indx : indices) {
+            //Changed indicies -> inferences
             if (indx < indices.size()) {
                 inferences[indx] = std::move(inferences.back());
                 inferences.pop_back();
@@ -344,11 +347,10 @@ void Fuser::merge_boxes() {
                 auto& single_cluster = inferences[cluster.second[0]];
                 output.push_back(FusionResult{
                     .uuid = std::string(single_cluster.uuid),
-                    .modality = std::string(single_cluster.modality),
-                    .class_name = std::string(single_cluster.class_name),
                     .local_position = single_cluster.local_center,
                     .global_position = single_cluster.center,
                     .dimensions = single_cluster.dim,
+                    .class_name = single_cluster.class_name,
                     .rotation = single_cluster.rotation,
                     .confidence = single_cluster.det_confidence
                 });
@@ -368,10 +370,8 @@ void Fuser::merge_boxes() {
             double average_rot = 0;
 
             //This map keeps track of the number of times we have seen a given class
-            std::unordered_map<std::string, double, StringViewHash, std::equal_to<>> class_map;
+            std::unordered_map<std::size_t, double> class_map;
             double class_weight_sum = 0;
-
-            std::string mod_string = "fusion";
 
             //UUIDs are very well behaved, and every unique UUID
             //is 36 charachters long, so we can prealloc our string
@@ -401,13 +401,7 @@ void Fuser::merge_boxes() {
                     //Map position already exists, update that position
                     map_iter->second += new_node.det_confidence;
                 } else {
-                    class_map.insert({std::string(new_node.class_name), new_node.det_confidence});
-
-#ifdef USE_STD_FORMAT
-                    mod_string = std::format("{}-{}", mod_string, new_node.modality);
-#else
-                    mod_string += std::string(new_node.modality).insert(0, 1, '-');
-#endif
+                    class_map.insert({new_node.class_name, new_node.det_confidence});
                 }
 
                 //Add to our class weigt sum
@@ -442,31 +436,27 @@ void Fuser::merge_boxes() {
             average_rot = std::fmod(average_rot, 2 * std::numbers::pi);
 
             //Normalize the class sums and extract the maximum
-            //As of V2 this was swapped to using an iterator to prevent
-            //inmtermediaries
-            auto class_conf_iter = class_map.begin();
-            auto max_conf_iter = class_map.begin();
-            double max_conf = 0;
-            while (class_conf_iter != class_map.end()) {
-                double new_conf = class_conf_iter->second / class_weight_sum;
-                if (new_conf > max_conf) {
-                    max_conf_iter = class_conf_iter;
-                    max_conf = new_conf;
+            //As of V3 We now use iterators and max_element to optimize the algorithms
+            auto max_conf_iter = std::max_element(
+                class_map.begin(), 
+                class_map.end(),
+                [](const auto& a, const auto& b) {
+                    return a.second < b.second;
                 }
-            }
+            );
+            double max_conf = max_conf_iter->second / class_weight_sum;
+            std::size_t selected_class = max_conf_iter->first;
 
             //Create a new value and push
             output.push_back(FusionResult{
                 .uuid = uuid_string,
-                .modality = mod_string,
-                .class_name = max_conf_iter->first,
                 .local_position = average_pos,
                 .global_position = local_to_geo(ref_origin, average_pos, ref_heading_cos, ref_heading_sin),
                 .dimensions = average_dim,
+                .class_name = selected_class,
                 .rotation = average_rot,
                 .confidence = max_conf,
             });
-
         }
     );
 }
@@ -526,28 +516,26 @@ void Fuser::set_unite(std::size_t i, std::size_t j) {
     }
 }
 
-double Fuser::get_pos_confidence(std::string_view key) {
-    auto it = position_confidence_map.find(key);
-    if (it != position_confidence_map.end()) {
-        return it->second;
+double Fuser::get_pos_confidence(std::size_t key) {
+    if (key < position_confidence_map.size()) {
+        return position_confidence_map[key];
     } else {
         return pos_conf_default;
     }
 }
 
-double Fuser::get_dim_confidence(std::string_view key) {
-    auto it = dimension_confidence_map.find(key);
-    if (it != dimension_confidence_map.end()) {
-        return it->second;
+double Fuser::get_dim_confidence(std::size_t key) {
+    if (key < dimension_confidence_map.size()) {
+        return dimension_confidence_map[key];
     } else {
         return dim_conf_default;
     }
 }
 
-double Fuser::get_class_confidence(std::pair<std::string_view, std::string_view> key) {
-    auto it = class_confidence_map.find(key);
-    if (it != class_confidence_map.end()) {
-        return it->second;
+double Fuser::get_class_confidence(std::pair<std::size_t, std::size_t> key) {
+    //Short circuit semantics should make this safe
+    if (key.first < class_confidence_map.size() && key.second < class_confidence_map[key.first].size()) {
+        return class_confidence_map[key.first][key.second];
     } else {
         return class_conf_default;
     }

@@ -12,7 +12,8 @@
         "ms-python.python",
         "ms-toolsai.jupyter",
         "ms-vscode.cpptools-extension-pack",
-        "hediet.vscode-drawio"
+        "hediet.vscode-drawio",
+        "llvm-vs-code-extensions.lldb-dap"
       ]
     }
   }

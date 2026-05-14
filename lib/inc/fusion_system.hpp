@@ -15,7 +15,6 @@
 
 #pragma once
 
-#include <unordered_map> //For hash maps
 #include <string>        //For dynamic strings
 #include <cstdint>       //For standard ints (uint32_t, etc)
 #include <string_view>   //For range based string views to pass in UUIDs
@@ -115,6 +114,9 @@ public:
      */
     struct ObjectDetection {
         //24 Byte Objects
+        //The UUID of the detection
+        std::string uuid;
+
         //Global space center
         Vec3D center;
 
@@ -125,20 +127,17 @@ public:
         Vec3D dim;
 
         //16 byte objects
-        //The UUID of the detection
-        std::string_view uuid;
-
-        //The modality name
-        std::string_view modality;
-
-        //The index of the class name
-        std::string_view class_name;
-
         //The corresponding axes from this objects rotation
         Vec2D axes_a;
         Vec2D axes_b;
 
         //8 Byte object
+        //The index of the modality name
+        std::size_t modality;
+
+        //The index of the class name
+        std::size_t class_name;
+
         //Z ordering value
         std::size_t z_order;
 
@@ -166,12 +165,6 @@ public:
         //An owned string that contains the objects tracked UUID
         std::string uuid;
 
-        //The modality name
-        std::string modality;
-
-        //The class name
-        std::string class_name;
-
         //The position of the result in local offset space from the sensors
         Vec3D local_position;
 
@@ -181,75 +174,14 @@ public:
         //The bounding box dimensions in meters
         Vec3D dimensions;
 
+        //The class name index
+        std::size_t class_name;
+
         //The Z-axis rotation of the object
         double rotation;
 
         //The results confidence
         double confidence;
-    };
-
-    /**
-     * @brief a struct to hold the PairHash operator, which is used in the class wide confidence
-     * map so that they can employ std::unorderd map, and their O(1) access & insert time, and
-     * thread-safe read access
-     */
-    struct PairHash {
-
-        //A tag to make the hasher transparent
-        using is_transparent = void;
-
-        /**
-         * @brief to ensure consistancy we use the string view as the common denominator in hashing
-         */
-        std::size_t hash_string(std::string_view view) const {
-            return std::hash<std::string_view>{}(view);
-        }
-
-
-        /**
-         * @brief the hashing operator used by the class wide confidence map, employs `std::hash`
-         * across an `std::pair` of `std::strings`
-         */
-        std::size_t operator() (const std::pair<std::string, std::string>& p) const {
-            return hash_string(p.first) ^ (hash_string(p.second) << 1);
-        }
-
-        /**
-         * @brief to use transparent hashing we must also override string views as well
-         */
-        std::size_t operator() (const std::pair<std::string_view, std::string_view>& p) const {
-            return hash_string(p.first) ^ (hash_string(p.second) << 1);
-        }
-    };
-
-    /**
-     * @brief While the C++ standard is great, we unfortunatly have to define what equality means between a pair
-     * of strings
-     */
-    struct PairEqual {
-        using is_transparent = void;
-
-        template <typename L, typename R>
-        bool operator() (const L& lhs, const R& rhs) const {
-            return (lhs.first == rhs.first) && (lhs.second == rhs.second);
-        }
-    };
-
-    /**
-     * @brief in order to use transparent lookup, we have to bully our unordered maps a little bit to 
-     * accept strings as the key, but allow for string views on lookup so we dont make temporaries
-     */
-    struct StringViewHash {
-        //A tag to make the hasher transparent
-        using is_transparent = void;
-
-        /**
-         * @brief the hasher invokation
-         */
-        std::size_t operator() (std::string_view view) const {
-            return std::hash<std::string_view>{}(view);
-        }
-
     };
 
 /*=====================================================================================================
@@ -269,8 +201,8 @@ public:
      * @param pos a position in global space (latitude, longitude, altitude) as a `Vec3D`
      * @param dim the dimensions of the object in meters as a `Vec3D`
      * @param rotation the rotation of the object around the up/down (Z) axis
-     * @param mod_name the name of the modality that the inference is coming from
-     * @param class_name the name of the detected class
+     * @param mod_name the index of the modality that the inference is coming from
+     * @param class_name the index of the detected class
      * @param uuid the UUID of the detection for logging and tracking
      * @param confidence the confidence in the detected class bounded on [0, 1]
      * @note this is the L-Value version of this function, and will NOT `std::move` values
@@ -281,10 +213,10 @@ public:
         Vec3D pos, 
         Vec3D dim, 
         double rotation, 
-        std::string_view mod_name, 
-        std::string_view class_name, 
+        std::size_t mod_name, 
+        std::size_t class_name, 
         double confidence,
-        std::string_view uuid,
+        std::string uuid,
         bool global_position = true
     );
 
@@ -315,7 +247,7 @@ public:
      * @param default_val the default value for class confidences that arent in the provided map
      * @note since this will only be called once, this was changed from an R-value reference to a value in V2 for saftey
      */
-    void assign_class_confidence_map(std::unordered_map<std::pair<std::string, std::string>, double, PairHash, PairEqual> map, double default_val = 1);
+    void assign_class_confidence_map(std::vector<std::vector<double>> map, double default_val = 1);
 
     /**
      * @brief assigns the internal confidence map that ties a modality passed as a string and a weight that is applied when fusing
@@ -324,7 +256,7 @@ public:
      * @param default_val the default value for class confidences that arent in the provided map
      * @note since this will only be called once, this was changed from an R-value reference to a value in V2 for saftey
      */
-    void assign_modality_pos_confidence_map(std::unordered_map<std::string, double, StringViewHash, std::equal_to<>> map, double default_val = 1);
+    void assign_modality_pos_confidence_map(std::vector<double> map, double default_val = 1);
 
     /**
      * @brief assigns the internal confidence map that ties a modality passed as a string and a weight that is applied when fusing to bias the final
@@ -333,7 +265,7 @@ public:
      * @param default_val the default value for class confidences that arent in the provided map
      * @note since this will only be called once, this was changed from an R-value reference to a value in V2 for saftey
      */
-    void assign_modality_dim_confidence_map(std::unordered_map<std::string, double, StringViewHash, std::equal_to<>> map, double default_val = 1);
+    void assign_modality_dim_confidence_map(std::vector<double> map, double default_val = 1);
 
     /**
      * @brief assign the current global (lat, long, alt) position that serves as the global reference origin
@@ -436,7 +368,7 @@ private:
      * @param key the key to search at
      * @return a double with the confidence, or the default val if not found
      */
-    double get_pos_confidence(std::string_view key);
+    double get_pos_confidence(std::size_t key);
 
     /**
      * @brief given the passed string view as a key, returns the confidence in the map
@@ -444,7 +376,7 @@ private:
      * @param key the key to search at
      * @return a double with the confidence, or the default val if not found
      */
-    double get_dim_confidence(std::string_view key);
+    double get_dim_confidence(std::size_t key);
 
     /**
      * @brief given the passed string view pair as a key, returns the confidence in the map
@@ -452,7 +384,7 @@ private:
      * @param key the key to search at
      * @return a double with the confidence, or the default val if not found
      */
-    double get_class_confidence(std::pair<std::string_view, std::string_view> key);
+    double get_class_confidence(std::pair<std::size_t, std::size_t> key);
 
 /*=====================================================================================================
                                     General Internal Resources
@@ -476,13 +408,13 @@ private:
     double ref_heading_sin = 0;
 
     //A map which keys {modality, class} -> confidence for weighted averaging of class
-    std::unordered_map<std::pair<std::string, std::string>, double, PairHash, PairEqual> class_confidence_map {};
+    std::vector<std::vector<double>> class_confidence_map {};
 
     //A map which keys {modality} -> confidence for weighted averaging of pos
-    std::unordered_map<std::string, double, StringViewHash, std::equal_to<>> position_confidence_map {};
+    std::vector<double> position_confidence_map {};
 
     //A map which keys {modality} -> confidence for weighted averaging of dimensions
-    std::unordered_map<std::string, double, StringViewHash, std::equal_to<>> dimension_confidence_map {};
+    std::vector<double> dimension_confidence_map {};
 
     //Default values for unmaped keys
     double class_conf_default = 1;
