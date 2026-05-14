@@ -102,10 +102,10 @@ void Threadpool::process_tasks() {
         //Then execute the job
         runnable();
 
-        std::size_t remaining = queued_jobs_count.fetch_sub(1) - 1;
-        if (remaining == 0) {
-            //Added in V3 to prevent lost wake ups I hope
-            std::lock_guard<std::mutex> wait_lock(wait_mtx);
+        if (queued_jobs_count.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+            {
+                std::lock_guard<std::mutex> wait_lock(wait_mtx);
+            }
             wait_cv.notify_all();
         }
 

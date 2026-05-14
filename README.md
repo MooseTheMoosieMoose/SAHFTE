@@ -55,7 +55,7 @@ to expose Z-order information, SAT axies, etc on return, and allows us to create
 * Early exit on the system has been added where if only a single modality has been seen it passes through the objects to the output format, including global position annotation
 * `is_intersecting` is now OBB instead of AABB to fascillitate Z-rotated inferences
 * Repo now has LLDB support, and LLDB has been added to the container
-* Python binding testing is migrating from `tests.py` to `asymptotic.py` which is a better platform
+* Python binding testing is migrating from `tests.py` to `asymptotic.py` and `looping.py` which is a better platform for testing asymptotic runtime behavior and continous looping stability respectivly.
 
 ## In The Works
 
