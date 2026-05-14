@@ -22,9 +22,11 @@ What SAHFTE is NOT:
 * A statistical model, this project is purely algorithmic and has no option as of yet to include statistical information like position and size confidence, the only statistical value that SAHFTE cares about is the confidence of the provided class label
 * Completely optimal, while SAHFTE uses several optimizations, this is for an undergrad project, and I have not had the time or real need to hammer this into the most performant form it can be. That being said however, it should still be pretty darn fast
 
-While it may not be the most complicated, feature rich or technically amazing thing in the world, it is still at the very least pretty speedy, and under testing generally has linear `O(n)` behavior, at least for total inference counts in the range of **[1, 150,000]**, that represent 50,000 ground truth objects in a field of 100m^3 around the hypothetical sensor bed, as this test shows.
+While it may not be the most complicated, feature rich or technically amazing thing in the world, it is still at the very least pretty speedy, and under testing generally has linear `O(n)` behavior, at least for total inference counts in the range of **[1, 150,000]**, that represent 50,000 ground truth objects picked up by 3 independent sensors in a field of 100m^3 around the hypothetical sensor bed, as this test shows.
 
 ![A graph with SAHFTE's performance](sahfte_eval.png "Performance")
+
+*This test was performed with 10 runs per object count, 3 modalities, 3 classes, a 100m^3 bounding volume, spatial bit depth of 8, auxillary threads of 3 (bringing total thread count to 4), and passing in local coords. The data points graphed here and the graphing code are inside `sahfte_eval.m`*
 
 ## Python Quick Start
 
