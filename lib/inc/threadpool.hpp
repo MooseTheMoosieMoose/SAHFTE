@@ -219,7 +219,7 @@ public:
                         //Enforce scope on this lock too
                         {
                             //Lock the iter, and check to see if we have hit the end
-                            std::lock_guard<std::mutex> lock(container_iter_mtx);
+                            std::lock_guard<std::mutex> lock_inner(container_iter_mtx);
                             if (item_iter == end_iter) {
                                 break;
                             }

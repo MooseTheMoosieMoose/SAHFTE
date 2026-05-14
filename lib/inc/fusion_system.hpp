@@ -152,6 +152,9 @@ public:
          * on the Z-order value
          */
         bool operator<(const ObjectDetection& other) const {
+            if (z_order == other.z_order) {
+                return uuid < other.uuid;
+            }
             return z_order < other.z_order;
         }
     };

@@ -5,7 +5,7 @@ import json, uuid, time, random, math
 
 #Asymptotic Behavior Testing Config
 OBJ_COUNT= 25
-RUNS = 100
+RUNS = 1000
 
 #Fuser Config
 AUX_THREADS = 3
