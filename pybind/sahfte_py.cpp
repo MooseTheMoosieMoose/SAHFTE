@@ -14,7 +14,7 @@
 
 #include <pybind11/pybind11.h>     //Gets us the Pybind macros to create the Python interface
 #include <pybind11/stl.h>          //Interopts with the STL
-#include <map>                     //We have to interopt between map and unordered map :(
+#include <memory>                  //Unique pointer to guard our fuser object
 
 #include "common.hpp"              //Allows us to port some utility functions
 #include "fusion_system.hpp"       //The main thing we are porting
@@ -172,7 +172,7 @@ PYBIND11_MODULE(sahfte, m) {
         )doc")
 
         .def(py::init([](std::size_t threads, uint8_t depth, std::optional<Vec3D> volume, std::optional<Vec3D> origin, double heading) {
-                return new Fuser(
+                return std::make_unique<Fuser>(
                     threads, 
                     depth, 
                     volume.value_or(Vec3D{100, 100, 100}), 
@@ -223,6 +223,7 @@ PYBIND11_MODULE(sahfte, m) {
 
         .def("fuse", 
             &Fuser::fuse,
+            py::call_guard<py::gil_scoped_release>(),
             py::arg("mod_count") = 0,
             R"doc(
             Performs the actual fusion once all detections are pumped into the system with
